@@ -3,7 +3,7 @@
 ## Installation
 ### 1. Clone code
 ```bash
-git clone https://github.com/kk123688/ADCCR.git
+git clone https://github.com/kkNewW/ADCCR.git
 cd ADCCR
 ```
 ### 2. Create a conda environment for this repo
