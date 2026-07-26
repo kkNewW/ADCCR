@@ -145,6 +145,19 @@ class COCODataset(Dataset):
         self.is_train = is_train
         self.use_dynamic_desc = self.multimodal_cfg.get("use_dynamic_desc", False)
         self.desc_mode = self.multimodal_cfg.get("desc_mode", "dynamic")
+        valid_desc_modes = {
+            "dynamic",
+            "name_only",
+            "name_anatomy",
+            "name_relation",
+            "name_anatomy_relation",
+            "all",
+        }
+
+        if self.desc_mode not in valid_desc_modes:
+            raise ValueError(
+                f"Invalid desc_mode: {self.desc_mode}"
+            )
         self.desc_sampler = DescriptionSampler(DESCRIPTION_BANK)
 
 
@@ -208,15 +221,28 @@ class COCODataset(Dataset):
             y_norm = y /self.size
             location_tokens = "[{:.3f},{:.3f}]".format(x_norm, y_norm)
             if self.use_dynamic_desc:
-                desc_text, desc_mode = self.desc_sampler.build_description(kp_name)
+                requested_mode = (
+                    None
+                    if self.desc_mode == "dynamic"
+                    else self.desc_mode
+                )
+
+                desc_text, sampled_mode = (
+                    self.desc_sampler.build_description(
+                        kp_name,
+                        mode=requested_mode,
+                    )
+                )
             else:
-                desc_text = KeypointLocationDescription[kp_name]
-                desc_mode = "fixed"
+                desc_text = (
+                    KeypointLocationDescription[kp_name]
+                )
+                sampled_mode = "fixed"
             kpt_name.append(kp_name)
             question.append(KeypointLocationQuestion[kp_name][0])
             kpt_des.append(desc_text)
             caption.append(location_tokens)
-            desc_mode_list.append(desc_mode)
+            desc_mode_list.append(sampled_mode)
             target_xy_list.append([x_norm, y_norm])   # normalized coords
             target_xy_224_list.append([x, y])
             is_select = True
@@ -466,38 +492,5 @@ def get_dir(src_point, rot_rad):
 
     return src_result
 
-class COCOLocalRefineDataset(COCODataset):
-    def __getitem__(self, i):
-        sources = self.list_data_dict[i]
-        image, joints, joints_vis, _, _ = self._get_pose_item(sources)
 
-        kpt_ids = list(range(self.num_joints))
-        random.shuffle(kpt_ids)
-
-        for idx in kpt_ids:
-            x, y, v = joints[idx, 0], joints[idx, 1], joints_vis[idx, 0]
-            if v < 1:
-                continue
-            if x < 0 or x >= self.size or y < 0 or y >= self.size:
-                continue
-
-            kp_name = COCO_KEYPOINT_NAME[idx]
-
-            if self.use_dynamic_desc:
-                desc_text, desc_mode = self.desc_sampler.build_description(kp_name)
-            else:
-                desc_text = KeypointLocationDescription[kp_name]
-                desc_mode = "fixed"
-
-            return {
-                "image": image,
-                "kpt_name": kp_name,
-                "description": desc_text,
-                "desc_mode": desc_mode,
-                "target_xy_224": torch.tensor([x, y], dtype=torch.float32),
-                "target_xy_norm": torch.tensor([x / self.size, y / self.size], dtype=torch.float32),
-                "crop_size": CROP_SIZE_MAP[kp_name],
-            }
-
-        return self.__getitem__(random.randint(0, len(self.list_data_dict) - 1))
 

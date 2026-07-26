@@ -19,6 +19,7 @@ from datasets.constants import (
     KeypointLocationDescription,
     KeypointLocationQuestion,
     DESCRIPTION_BANK,
+    CROP_SIZE_MAP
 )
 from datasets.convsersation import conv_keypoint, conv_llama2, conv_simple
 from datasets.desc_bank import DescriptionSampler
@@ -225,6 +226,68 @@ def worker(model, tokenizer, dataset, args, output_dir):
             decoded_kpt[i, 0] = x
             decoded_kpt[i, 1] = y
             decoded_kpt[i, 2] = (x_s + y_s) / 2.0
+            coarse_xy_224 = decoded_kpt[:, :2].copy()
+
+            if args.use_local_refiner:
+                if not getattr(
+                        model.config,
+                        "use_local_refiner",
+                        False,
+                ):
+                    raise RuntimeError(
+                        "Evaluation requested the local refiner, "
+                        "but the checkpoint configuration does "
+                        "not contain one."
+                    )
+
+                descriptions = [
+                    result["description"]
+                    for result in result_dicts
+                ]
+
+                description_tokens = tokenizer(
+                    descriptions,
+                    padding=True,
+                    truncation=True,
+                    max_length=96,
+                    return_tensors="pt",
+                )
+
+                description_ids = (
+                    description_tokens.input_ids.cuda()
+                )
+                description_mask = (
+                    description_tokens.attention_mask.cuda()
+                )
+
+                coarse_xy_tensor = torch.tensor(
+                    coarse_xy_224,
+                    dtype=torch.float32,
+                    device=batch_images.device,
+                )
+
+                local_crop_sizes = torch.tensor(
+                    [
+                        CROP_SIZE_MAP[
+                            result["kpt_name"]
+                        ]
+                        for result in result_dicts
+                    ],
+                    dtype=torch.float32,
+                    device=batch_images.device,
+                )
+
+                refined_xy, _ = model.refine_coordinates(
+                    images=batch_images,
+                    coarse_xy=coarse_xy_tensor,
+                    crop_sizes=local_crop_sizes,
+                    desc_input_ids=description_ids,
+                    desc_attention_mask=description_mask,
+                )
+
+                decoded_kpt[:, :2] = (
+                    refined_xy.float().cpu().numpy()
+                )
 
         decoded_kpt[:, :2] = transform_preds(
             decoded_kpt[:, :2], c, s, (crop_size, crop_size)
@@ -325,6 +388,10 @@ if __name__ == "__main__":
     parser.add_argument("--use-dynamic-desc", action="store_true")
     parser.add_argument("--eval-desc-mode", type=str, default="fixed",
                         choices=["fixed", "name_only", "name_anatomy", "name_relation", "name_anatomy_relation", "all"])
+    parser.add_argument(
+        "--use-local-refiner",
+        action="store_true",
+    )
     args = parser.parse_args()
 
     eval_model(args)
