@@ -1,49 +1,124 @@
+import math
 import random
 
 
 class DescriptionSampler:
-    def __init__(self, description_bank, probs=None):
+    VALID_MODES = {
+        "name_only",
+        "name_anatomy",
+        "name_relation",
+        "name_anatomy_relation",
+        "all",
+    }
+
+    MODE_FIELDS = {
+        "name_only": (),
+        "name_anatomy": (
+            "anatomy",
+        ),
+        "name_relation": (
+            "relation",
+        ),
+        "name_anatomy_relation": (
+            "anatomy",
+            "relation",
+        ),
+        "all": (
+            "anatomy",
+            "relation",
+            "visual",
+        ),
+    }
+
+    def __init__(
+        self,
+        description_bank,
+        probs=None,
+    ):
         self.description_bank = description_bank
+
         self.probs = probs or {
             "name_only": 0.15,
             "name_anatomy": 0.25,
             "name_relation": 0.25,
             "name_anatomy_relation": 0.20,
-            "all": 0.15
+            "all": 0.15,
         }
 
-    def sample_mode(self):
-        keys = list(self.probs.keys())
-        vals = list(self.probs.values())
-        return random.choices(keys, weights=vals, k=1)[0]
+        unknown_modes = (
+            set(self.probs)
+            - self.VALID_MODES
+        )
+        if unknown_modes:
+            raise ValueError(
+                f"Unknown description modes: "
+                f"{sorted(unknown_modes)}"
+            )
 
-    def build_description(self, kp_name, mode=None):
-        item = self.description_bank[kp_name]
+        probability_sum = sum(
+            self.probs.values()
+        )
+        if not math.isclose(
+            probability_sum,
+            1.0,
+            rel_tol=1e-6,
+            abs_tol=1e-6,
+        ):
+            raise ValueError(
+                "Description probabilities must sum "
+                f"to 1.0, got {probability_sum}."
+            )
+
+    def sample_mode(self):
+        modes = list(self.probs.keys())
+        probabilities = [
+            self.probs[mode]
+            for mode in modes
+        ]
+
+        return random.choices(
+            modes,
+            weights=probabilities,
+            k=1,
+        )[0]
+
+    def build_description(
+        self,
+        keypoint_name,
+        mode=None,
+    ):
+        if keypoint_name not in self.description_bank:
+            raise KeyError(
+                f"Description bank does not contain "
+                f"{keypoint_name!r}."
+            )
+
         mode = mode or self.sample_mode()
 
-        parts = []
+        if mode not in self.VALID_MODES:
+            raise ValueError(
+                f"Invalid description mode: {mode}"
+            )
 
-        if mode == "name_only":
-            parts.append(random.choice(item["name"]))
+        item = self.description_bank[
+            keypoint_name
+        ]
 
-        elif mode == "name_anatomy":
-            parts.append(random.choice(item["name"]))
-            parts.append(random.choice(item["anatomy"]))
+        name = random.choice(item["name"])
 
-        elif mode == "name_relation":
-            parts.append(random.choice(item["name"]))
-            parts.append(random.choice(item["relation"]))
+        sentences = [
+            f"Target keypoint: {name}."
+        ]
 
-        elif mode == "name_anatomy_relation":
-            parts.append(random.choice(item["name"]))
-            parts.append(random.choice(item["anatomy"]))
-            parts.append(random.choice(item["relation"]))
+        for field_name in self.MODE_FIELDS[mode]:
+            candidates = item.get(
+                field_name,
+                []
+            )
 
-        elif mode == "all":
-            parts.append(random.choice(item["name"]))
-            parts.append(random.choice(item["anatomy"]))
-            parts.append(random.choice(item["relation"]))
-            if "visual" in item and len(item["visual"]) > 0:
-                parts.append(random.choice(item["visual"]))
+            if candidates:
+                sentences.append(
+                    random.choice(candidates)
+                )
 
-        return " ".join(parts), mode
+        return " ".join(sentences), mode

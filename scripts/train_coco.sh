@@ -31,6 +31,18 @@ CUDA_VISIBLE_DEVICES=$IDX OMP_NUM_THREADS=1 torchrun --nnodes=1 --nproc_per_node
     --dino_path ./checkpoints/model_weights/dinov2_vitl14_pretrain.pth \
     --conv_format keypoint \
     --data_augmentation True \
+    --use_dynamic_desc True \
+    --desc_mode dynamic \
+    --mm_projector_type mlp \
+    --mm_projector_depth 2 \
+    --use_local_refiner True \
+    --refiner_input_size 128 \
+    --refiner_heatmap_size 64 \
+    --refiner_text_dim 768 \
+    --refiner_feat_dim 256 \
+    --refiner_sigma 2.0 \
+    --refiner_noise_ratio 0.25 \
+    --lambda_hm 0.5 \
     --tune_mm_mlp_adapter True \
     --freeze_llm False \
     --lora_llm_enable True \
@@ -71,4 +83,7 @@ CUDA_VISIBLE_DEVICES=$IDX OMP_NUM_THREADS=1 torchrun --nnodes=1 --nproc_per_node
     --question-file ${data_dir}/coco/annotations/coco_val.json \
     --image-folder ${data_dir}/coco/val2017 \
     --output-dir ${output_eval_dir} \
-    --conv-format keypoint  2>&1 | tee ${output_eval_dir}/eval.txt
+    --conv-format keypoint
+    --use-dynamic-desc \
+    --eval-desc-mode all \
+    --use-local-refiner  2>&1 | tee ${output_eval_dir}/eval.txt
