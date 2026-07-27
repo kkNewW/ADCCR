@@ -21,7 +21,7 @@ DEFAULT_EOS_TOKEN = "</s>"
 
 
 from .constants import H36M_KEYPOINT_NAME, KeypointLocationDescription, KeypointLocationQuestion
-from .convsersation import conv_simple, conv_llama2, conv_keypoint
+from .conversation import conv_simple, conv_llama2, conv_keypoint
 
 DEFAULT_IMAGE_PATCH_TOKEN = "<im_patch>"
 PREFIX_IMAGE = "Image: "
