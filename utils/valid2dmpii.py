@@ -18,7 +18,7 @@ from torch.utils.data import Dataset
 import math
 from models import ADCCRModel
 from datasets.coco import KeypointLocationDescription, KeypointLocationQuestion, transform_preds, affine_transform, get_affine_transform
-from datasets.convsersation import conv_keypoint, conv_llama2, conv_simple
+from datasets.conversation import conv_keypoint, conv_llama2, conv_simple
 from dataclasses import dataclass
 import re
 
