@@ -25,7 +25,7 @@ from .constants import (
     DESCRIPTION_BANK,
     CROP_SIZE_MAP,
 )
-from .convsersation import conv_simple, conv_llama2, conv_keypoint, build_keypoint_prompt
+from .conversation import conv_simple, conv_llama2, conv_keypoint, build_keypoint_prompt
 from .desc_bank import DescriptionSampler
 
 
