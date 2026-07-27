@@ -21,7 +21,7 @@ from datasets.constants import (
     DESCRIPTION_BANK,
     CROP_SIZE_MAP
 )
-from datasets.convsersation import conv_keypoint, conv_llama2, conv_simple
+from datasets.conversation import conv_keypoint, conv_llama2, conv_simple
 from datasets.desc_bank import DescriptionSampler
 from dataclasses import dataclass
 import re
@@ -226,68 +226,68 @@ def worker(model, tokenizer, dataset, args, output_dir):
             decoded_kpt[i, 0] = x
             decoded_kpt[i, 1] = y
             decoded_kpt[i, 2] = (x_s + y_s) / 2.0
-            coarse_xy_224 = decoded_kpt[:, :2].copy()
+        coarse_xy_224 = decoded_kpt[:, :2].copy()
 
-            if args.use_local_refiner:
-                if not getattr(
-                        model.config,
-                        "use_local_refiner",
-                        False,
-                ):
-                    raise RuntimeError(
-                        "Evaluation requested the local refiner, "
-                        "but the checkpoint configuration does "
-                        "not contain one."
-                    )
+        if args.use_local_refiner:
+            if not getattr(
+                    model.config,
+                    "use_local_refiner",
+                    False,
+            ):
+                raise RuntimeError(
+                    "Evaluation requested the local refiner, "
+                    "but the checkpoint configuration does "
+                    "not contain one."
+                )
 
-                descriptions = [
-                    result["description"]
+            descriptions = [
+                result["description"]
+                for result in result_dicts
+            ]
+
+            description_tokens = tokenizer(
+                descriptions,
+                padding=True,
+                truncation=True,
+                max_length=96,
+                return_tensors="pt",
+            )
+
+            description_ids = (
+                description_tokens.input_ids.cuda()
+            )
+            description_mask = (
+                description_tokens.attention_mask.cuda()
+            )
+
+            coarse_xy_tensor = torch.tensor(
+                coarse_xy_224,
+                dtype=torch.float32,
+                device=batch_images.device,
+            )
+
+            local_crop_sizes = torch.tensor(
+                [
+                    CROP_SIZE_MAP[
+                        result["kpt_name"]
+                    ]
                     for result in result_dicts
-                ]
+                ],
+                dtype=torch.float32,
+                device=batch_images.device,
+            )
 
-                description_tokens = tokenizer(
-                    descriptions,
-                    padding=True,
-                    truncation=True,
-                    max_length=96,
-                    return_tensors="pt",
-                )
+            refined_xy, _ = model.refine_coordinates(
+                images=batch_images,
+                coarse_xy=coarse_xy_tensor,
+                crop_sizes=local_crop_sizes,
+                desc_input_ids=description_ids,
+                desc_attention_mask=description_mask,
+            )
 
-                description_ids = (
-                    description_tokens.input_ids.cuda()
-                )
-                description_mask = (
-                    description_tokens.attention_mask.cuda()
-                )
-
-                coarse_xy_tensor = torch.tensor(
-                    coarse_xy_224,
-                    dtype=torch.float32,
-                    device=batch_images.device,
-                )
-
-                local_crop_sizes = torch.tensor(
-                    [
-                        CROP_SIZE_MAP[
-                            result["kpt_name"]
-                        ]
-                        for result in result_dicts
-                    ],
-                    dtype=torch.float32,
-                    device=batch_images.device,
-                )
-
-                refined_xy, _ = model.refine_coordinates(
-                    images=batch_images,
-                    coarse_xy=coarse_xy_tensor,
-                    crop_sizes=local_crop_sizes,
-                    desc_input_ids=description_ids,
-                    desc_attention_mask=description_mask,
-                )
-
-                decoded_kpt[:, :2] = (
-                    refined_xy.float().cpu().numpy()
-                )
+            decoded_kpt[:, :2] = (
+                refined_xy.float().cpu().numpy()
+            )
 
         decoded_kpt[:, :2] = transform_preds(
             decoded_kpt[:, :2], c, s, (crop_size, crop_size)
