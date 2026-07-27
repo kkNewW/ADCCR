@@ -61,11 +61,11 @@ git clone https://huggingface.co/kkNewW/ADCCR
 
 mkdir checkpoints
 mkdir checkpoints/ckpts
-mv LocLLM/coco checkpoints/ckpts
-mv LocLLM/h36m checkpoints/ckpts
+mv ADCCR/coco checkpoints/ckpts
+mv ADCCR/h36m checkpoints/ckpts
 # for training
 mkdir checkpoints/model_weights
-mv LocLLM/pretrained/dinov2_vitl14_pretrain.pth checkpoints/model_weights
+mv ADCCR/pretrained/dinov2_vitl14_pretrain.pth checkpoints/model_weights
 # clone vicuna1.5
 cd checkpoints/model_weights
 git clone https://huggingface.co/lmsys/vicuna-7b-v1.5
