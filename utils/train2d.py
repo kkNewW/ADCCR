@@ -101,7 +101,7 @@ class DataArguments:
     data_augmentation: bool = field(default=False)
     conv_format: str = field(default="keypoint")
     # ===== Auto Description =====
-    use_dynamic_desc: bool = field(default=False)
+    use_dynamic_desc: bool = field(default=True)
     desc_mode: str = field(default="dynamic")
 
 @dataclass
