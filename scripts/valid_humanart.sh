@@ -35,4 +35,7 @@ CUDA_VISIBLE_DEVICES=$IDX OMP_NUM_THREADS=1 torchrun --nnodes=1 --nproc_per_node
     --question-file ${data_dir}/HumanArt/annotations/validation_humanart.json \
     --image-folder ${data_dir} \
     --output-dir ${output_eval_dir} \
-    --conv-format keypoint  2>&1 | tee ${output_eval_dir}/eval.txt
+    --conv-format keypoint  \
+    --use-dynamic-desc \
+    --eval-desc-mode all \
+    --use-local-refiner 2>&1 | tee ${output_eval_dir}/eval.txt
