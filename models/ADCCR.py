@@ -69,11 +69,11 @@ class ADCCRConfig(LlamaConfig):
         lora_llm_dropout=0.05,
         crop_size=224,
         # visual-language connector
-        mm_projector_type="linear",
-        mm_projector_depth=1,
+        mm_projector_type="mlp",
+        mm_projector_depth=2,
 
         # local refiner
-        use_local_refiner=False,
+        use_local_refiner=True,
         refiner_input_size=128,
         refiner_heatmap_size=64,
         refiner_text_dim=768,
