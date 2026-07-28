@@ -18,7 +18,9 @@ from torch.utils.data import Dataset
 import math
 from models import ADCCRModel
 from datasets.coco import KeypointLocationDescription, KeypointLocationQuestion, transform_preds, affine_transform, get_affine_transform
+from datasets.constants import DESCRIPTION_BANK, CROP_SIZE_MAP
 from datasets.conversation import conv_keypoint, conv_llama2, conv_simple
+from datasets.desc_bank import DescriptionSampler
 from dataclasses import dataclass
 import re
 
@@ -35,6 +37,23 @@ DEFAULT_IMAGE_PATCH_TOKEN = "<im_patch>"
 PREFIX_IMAGE = "Image: "
 
 MPII_KEYPOINT_NAME = ['right ankle', 'right knee', 'right hip', 'left hip', 'left knee', 'left ankle', 'pelvis', 'thorax', 'neck', 'head_top', 'right wrist', 'right elbow', 'right shoulder', 'left shoulder', 'left elbow', 'left wrist']
+
+# Only the 12 MPII joints shared with COCO have defined
+# category-aware crop sizes. Indices 6--9 remain coarse-only.
+MPII_REFINER_KEYPOINTS = {
+    'right ankle',
+    'right knee',
+    'right hip',
+    'left hip',
+    'left knee',
+    'left ankle',
+    'right wrist',
+    'right elbow',
+    'right shoulder',
+    'left shoulder',
+    'left elbow',
+    'left wrist',
+}
 
 class MPIIDataset(Dataset):
     """Dataset for supervised fine-tuning."""
@@ -250,9 +269,36 @@ class MPIIDataset(Dataset):
 
 @dataclass
 class DataCollatorForSupervisedDataset(object):
-    def __init__(self, image_token_len, conv_format):
+    def __init__(
+        self,
+        image_token_len,
+        conv_format,
+        use_dynamic_desc=False,
+        eval_desc_mode="fixed",
+    ):
         self.image_token_len = image_token_len
         self.conv_format = conv_format
+        self.use_dynamic_desc = use_dynamic_desc
+        self.eval_desc_mode = eval_desc_mode
+        self.desc_sampler = DescriptionSampler(
+            DESCRIPTION_BANK
+        )
+
+    def _get_description(self, kpt_name):
+        if (
+            not self.use_dynamic_desc
+            or self.eval_desc_mode == "fixed"
+            or kpt_name not in DESCRIPTION_BANK
+        ):
+            return KeypointLocationDescription[kpt_name]
+
+        description, _ = (
+            self.desc_sampler.build_description(
+                kpt_name,
+                mode=self.eval_desc_mode,
+            )
+        )
+        return description
 
     def __call__(self, instances):
         """Collate examples for supervised fine-tuning."""
@@ -269,14 +315,14 @@ class DataCollatorForSupervisedDataset(object):
             conv = conv_llama2.copy()
 
         for i, line in enumerate(instances):
-            result_dict = {}
             images = line['images'].unsqueeze(0)
             ins_id = line['instance_id']
             c = line['c']
             s = line['s']
             for kpt_id, kpt_name in enumerate(MPII_KEYPOINT_NAME):
+                result_dict = {}
                 question = KeypointLocationQuestion[kpt_name][0]
-                kpt_des = KeypointLocationDescription[kpt_name]
+                kpt_des = self._get_description(kpt_name)
 
                 conv.messages = []
                 if self.conv_format == 'keypoint':
@@ -305,6 +351,8 @@ class DataCollatorForSupervisedDataset(object):
                 result_dict['instance_id'] = ins_id
                 result_dict['c'] = c
                 result_dict['s'] = s
+                result_dict['kpt_name'] = kpt_name
+                result_dict['description'] = kpt_des
                 batch_prompts.append(cur_prompt)
                 batch_images.append(images)
                 batch_has_images.append(has_images)
@@ -328,7 +376,18 @@ def worker(model, tokenizer, dataset, args, output_dir):
 
     sub_dataset = torch.utils.data.Subset(dataset, indices)
     batch_size = 1
-    data_loader = DataLoader(sub_dataset, batch_size=batch_size, shuffle=False, num_workers=4, collate_fn=DataCollatorForSupervisedDataset(image_token_len, args.conv_format))
+    data_loader = DataLoader(
+        sub_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=4,
+        collate_fn=DataCollatorForSupervisedDataset(
+            image_token_len=image_token_len,
+            conv_format=args.conv_format,
+            use_dynamic_desc=args.use_dynamic_desc,
+            eval_desc_mode=args.eval_desc_mode,
+        ),
+    )
 
     all_preds = []
     for result_dicts, batch_prompts, batch_images, batch_has_images in tqdm(data_loader):
@@ -411,6 +470,90 @@ def worker(model, tokenizer, dataset, args, output_dir):
             decoded_kpt[i, 0] = x
             decoded_kpt[i, 1] = y
             decoded_kpt[i, 2] = (x_s + y_s) / 2.0
+
+        coarse_xy_224 = decoded_kpt[:, :2].copy()
+
+        if args.use_local_refiner:
+            if not getattr(
+                model.config,
+                "use_local_refiner",
+                False,
+            ):
+                raise RuntimeError(
+                    "Evaluation requested the local refiner, "
+                    "but the checkpoint configuration does "
+                    "not contain one."
+                )
+
+            refine_indices = [
+                index
+                for index, result in enumerate(result_dicts)
+                if result["kpt_name"]
+                in MPII_REFINER_KEYPOINTS
+            ]
+
+            if len(refine_indices) != 12:
+                raise RuntimeError(
+                    "Expected 12 overlapping COCO/MPII "
+                    "keypoints for local refinement, got "
+                    f"{len(refine_indices)}."
+                )
+
+            descriptions = [
+                result_dicts[index]["description"]
+                for index in refine_indices
+            ]
+            description_tokens = tokenizer(
+                descriptions,
+                padding=True,
+                truncation=True,
+                max_length=96,
+                return_tensors="pt",
+            )
+            description_ids = (
+                description_tokens.input_ids.cuda()
+            )
+            description_mask = (
+                description_tokens.attention_mask.cuda()
+            )
+
+            refine_index_tensor = torch.tensor(
+                refine_indices,
+                dtype=torch.long,
+                device=batch_images.device,
+            )
+            refine_images = batch_images.index_select(
+                0,
+                refine_index_tensor,
+            )
+            coarse_xy = torch.tensor(
+                coarse_xy_224[refine_indices],
+                dtype=torch.float32,
+                device=batch_images.device,
+            )
+            crop_sizes = torch.tensor(
+                [
+                    CROP_SIZE_MAP[
+                        result_dicts[index]["kpt_name"]
+                    ]
+                    for index in refine_indices
+                ],
+                dtype=torch.float32,
+                device=batch_images.device,
+            )
+
+            refined_xy, _ = model.refine_coordinates(
+                images=refine_images,
+                coarse_xy=coarse_xy,
+                crop_sizes=crop_sizes,
+                desc_input_ids=description_ids,
+                desc_attention_mask=description_mask,
+            )
+
+            decoded_kpt[
+                refine_indices,
+                :2,
+            ] = refined_xy.float().cpu().numpy()
 
         decoded_kpt[:, :2] = transform_preds(
             decoded_kpt[:, :2], c, s, (crop_size, crop_size)
@@ -503,6 +646,27 @@ if __name__ == "__main__":
     parser.add_argument('--gpus', help='gpu ids for eval', default='0', type=str)
     parser.add_argument("--conv-format", type=str, default="keypoint")
     parser.add_argument("--output-dir", type=str, default="")
+    parser.add_argument(
+        "--use-dynamic-desc",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--eval-desc-mode",
+        type=str,
+        default="fixed",
+        choices=[
+            "fixed",
+            "name_only",
+            "name_anatomy",
+            "name_relation",
+            "name_anatomy_relation",
+            "all",
+        ],
+    )
+    parser.add_argument(
+        "--use-local-refiner",
+        action="store_true",
+    )
     args = parser.parse_args()
 
     eval_model(args)
