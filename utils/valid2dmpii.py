@@ -1,28 +1,38 @@
 import argparse
-from transformers import AutoTokenizer, AutoConfig
+from transformers import AutoTokenizer
 import torch
 import os
 import json
 from tqdm import tqdm
-from transformers import StoppingCriteria
 from torch.utils.data import DataLoader
 import numpy as np
-import torch.nn.functional as F
 import pickle as pk
 import time
 import cv2
-from scipy.io import loadmat, savemat
+from scipy.io import loadmat
 from collections import OrderedDict
 from torch.utils.data import Dataset
 
-import math
 from models import ADCCRModel
-from datasets.coco import KeypointLocationDescription, KeypointLocationQuestion, transform_preds, affine_transform, get_affine_transform
-from datasets.constants import DESCRIPTION_BANK, CROP_SIZE_MAP
+from datasets.coco import (
+    affine_transform,
+    get_affine_transform,
+    transform_preds,
+)
+from datasets.constants import (
+    CROP_SIZE_MAP,
+    DESCRIPTION_BANK,
+    KeypointLocationDescription,
+    KeypointLocationQuestion,
+)
 from datasets.conversation import conv_keypoint, conv_llama2, conv_simple
 from datasets.desc_bank import DescriptionSampler
+from utils.inference import (
+    generation_sequence_confidence,
+    parse_normalized_coordinates,
+)
+from utils.reproducibility import set_global_seed
 from dataclasses import dataclass
-import re
 
 def disable_torch_init():
     """
@@ -162,10 +172,10 @@ class MPIIDataset(Dataset):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
         # process image
-        joints = sources['joints_3d']
-        joints_vis = sources['joints_3d_vis']
-        c = sources['center']
-        s = sources['scale']
+        joints = sources['joints_3d'].copy()
+        joints_vis = sources['joints_3d_vis'].copy()
+        c = sources['center'].copy()
+        s = sources['scale'].copy()
         r = 0
 
         trans = get_affine_transform(c, s, r, (int(self.size), int(self.size)))
@@ -257,9 +267,9 @@ class MPIIDataset(Dataset):
             ('Hip', 0.5 * (PCKh[lhip] + PCKh[rhip])),
             ('Knee', 0.5 * (PCKh[lkne] + PCKh[rkne])),
             ('Ankle', 0.5 * (PCKh[lank] + PCKh[rank])),
-            ('Pelv', 0.5 * (PCKh[pelv])),
-            ('Neck', 0.5 * (PCKh[neck])),
-            ('Thor', 0.5 * (PCKh[thor])),
+            ('Pelv', PCKh[pelv]),
+            ('Neck', PCKh[neck]),
+            ('Thor', PCKh[thor]),
             ('Mean', np.sum(PCKh * jnt_ratio)),
             ('Mean@0.1', np.sum(pckAll[11, :] * jnt_ratio))
         ]
@@ -413,19 +423,34 @@ def worker(model, tokenizer, dataset, args, output_dir):
                 has_images=batch_has_images,
                 attention_mask=attention_mask,
                 do_sample=False,
-                max_new_tokens=20,
+                max_new_tokens=args.max_new_tokens,
                 output_scores=True,
                 return_dict_in_generate=True
             )
             output_ids = output_dict['sequences']
-            output_scores = output_dict['scores']
+            sequence_confidence = (
+                generation_sequence_confidence(
+                    output_dict,
+                    input_ids.shape[1],
+                )
+                .float()
+                .cpu()
+                .numpy()
+            )
 
         outputs = []
-        for input_id, output_id in zip(input_ids, output_ids):
+        for output_index, (
+            input_id,
+            output_id,
+        ) in enumerate(zip(input_ids, output_ids)):
             input_token_len = input_id.shape[0]
             n_diff_input_output = (input_id != output_id[:input_token_len]).sum().item()
             if n_diff_input_output > 0:
-                print(f'[Warning] Sample {i}: {n_diff_input_output} output_ids are not the same as the input_ids')
+                print(
+                    f"[Warning] Sample {output_index}: "
+                    f"{n_diff_input_output} output_ids differ "
+                    "from the input prefix."
+                )
             output = tokenizer.batch_decode(output_id[input_token_len:].unsqueeze(0), skip_special_tokens=True)[0]
             output = output.strip()
             outputs.append(output)
@@ -436,36 +461,19 @@ def worker(model, tokenizer, dataset, args, output_dir):
         c = result_dicts[0]['c']
         s = result_dicts[0]['s']
 
-        output_scores = torch.stack(output_scores[:-1], dim=0)
-        pattern = re.compile(r'0\.\d+')
-
         for i in range(len(outputs)):
             # decode coordinates from token
             pred_kpt = outputs[i]
-            res = pattern.findall(pred_kpt)
-            if not len(res) == 2: 
+            coordinates = parse_normalized_coordinates(
+                pred_kpt
+            )
+            if coordinates is None:
                 print('Format error', pred_kpt)
-            if len(res) == 0: continue
-            if len(res) == 1:
-                x = float(res[0]) * crop_size
-                x_pos = pred_kpt.find(res[0])
-                x_s = output_scores[x_pos:x_pos+len(res[0]), i, :].cpu()
-                x_s = F.softmax(x_s, dim=1)
-                x_s = torch.max(x_s, dim=1)[0].mean().float().item()
-                y = 0
-                y_s = 0
-            else:
-                x, y = float(res[0]), float(res[1])
-                x, y = x * crop_size, y * crop_size
-            
-                x_pos = pred_kpt.find(res[0])
-                x_s = output_scores[x_pos:x_pos+len(res[0]), i, :].cpu()
-                x_s = F.softmax(x_s, dim=1)
-                x_s = torch.max(x_s, dim=1)[0].mean().float().item()
-                y_pos = pred_kpt.find(res[1])
-                y_s = output_scores[y_pos:y_pos+len(res[1]), i, :].cpu()
-                y_s = F.softmax(y_s, dim=1)
-                y_s = torch.max(y_s, dim=1)[0].mean().float().item()
+                continue
+            x, y = coordinates
+            x, y = x * crop_size, y * crop_size
+            x_s = float(sequence_confidence[i])
+            y_s = x_s
 
             decoded_kpt[i, 0] = x
             decoded_kpt[i, 1] = y
@@ -541,6 +549,11 @@ def worker(model, tokenizer, dataset, args, output_dir):
                 dtype=torch.float32,
                 device=batch_images.device,
             )
+            crop_sizes *= getattr(
+                model.config,
+                "refiner_crop_scale",
+                1.0,
+            )
 
             refined_xy, _ = model.refine_coordinates(
                 images=refine_images,
@@ -607,6 +620,21 @@ def worker(model, tokenizer, dataset, args, output_dir):
         res_all, res_mean = dataset.evaluate(preds)
         print(res_all)
         print(res_mean)
+        metrics = {
+            key: float(value)
+            for key, value in res_all.items()
+        }
+        metrics["protocol"] = {
+            "person_instances": "MPII center/scale",
+            "description_mode": args.eval_desc_mode,
+            "local_refiner": args.use_local_refiner,
+            "seed": args.seed,
+        }
+        with open(
+            os.path.join(output_dir, "metrics.json"),
+            "w",
+        ) as fid:
+            json.dump(metrics, fid, indent=2)
 
         return True
     else:
@@ -619,6 +647,7 @@ def eval_model(args):
     
     print('Init process group: world_size: {}, rank: {}'.format(world_size, rank))
     torch.cuda.set_device(rank)
+    set_global_seed(args.seed)
 
     disable_torch_init()
     model_name = os.path.expanduser(args.model_name)
@@ -641,7 +670,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-name", type=str, default="facebook/opt-350m")
     parser.add_argument("--image-folder", type=str, default="")
-    parser.add_argument("--question-file", type=str, default="tables/question.json")
+    parser.add_argument("--question-file", type=str, default="question.json")
     parser.add_argument("--answers-file", type=str, default="answer.jsonl")
     parser.add_argument('--gpus', help='gpu ids for eval', default='0', type=str)
     parser.add_argument("--conv-format", type=str, default="keypoint")
@@ -666,6 +695,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--use-local-refiner",
         action="store_true",
+    )
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=20,
     )
     args = parser.parse_args()
 

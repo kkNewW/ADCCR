@@ -1,11 +1,7 @@
 import os
-import copy
 from dataclasses import dataclass, field
-import json
-import logging
 import pathlib
 from typing import Dict, Optional, Sequence
-import random
 
 import torch
 
@@ -17,11 +13,7 @@ from datasets.constants import CROP_SIZE_MAP
 from utils.llavasimple_trainer import (
     LLaVASimpleTrainer
 )
-
-from PIL import Image
-import torch.nn as nn
-import io
-
+from utils.reproducibility import set_global_seed
 
 IGNORE_INDEX = -100
 DEFAULT_PAD_TOKEN = "[PAD]"
@@ -83,6 +75,12 @@ class ModelArguments:
     refiner_noise_ratio: float = field(
         default=0.25
     )
+    refiner_crop_scale: float = field(
+        default=1.0
+    )
+    refiner_use_text: bool = field(
+        default=True
+    )
     lambda_hm: float = field(
         default=0.5
     )
@@ -103,6 +101,7 @@ class DataArguments:
     # ===== Auto Description =====
     use_dynamic_desc: bool = field(default=True)
     desc_mode: str = field(default="dynamic")
+    desc_sampling_strategy: str = field(default="default")
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -146,6 +145,8 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer,
 class DataCollatorForSupervisedDataset:
     tokenizer: transformers.PreTrainedTokenizer
     use_local_refiner: bool = False
+    refiner_use_text: bool = True
+    refiner_crop_scale: float = 1.0
     desc_max_length: int = 96
 
     def __call__(
@@ -249,20 +250,21 @@ class DataCollatorForSupervisedDataset:
                     "the batch has no descriptions."
                 )
 
-            description_tokens = self.tokenizer(
-                descriptions,
-                padding=True,
-                truncation=True,
-                max_length=self.desc_max_length,
-                return_tensors="pt",
-            )
+            if self.refiner_use_text:
+                description_tokens = self.tokenizer(
+                    descriptions,
+                    padding=True,
+                    truncation=True,
+                    max_length=self.desc_max_length,
+                    return_tensors="pt",
+                )
 
-            batch["desc_input_ids"] = (
-                description_tokens.input_ids
-            )
-            batch["desc_attention_mask"] = (
-                description_tokens.attention_mask
-            )
+                batch["desc_input_ids"] = (
+                    description_tokens.input_ids
+                )
+                batch["desc_attention_mask"] = (
+                    description_tokens.attention_mask
+                )
             batch["refine_target_xy"] = (
                 torch.stack(
                     target_coordinates,
@@ -271,7 +273,10 @@ class DataCollatorForSupervisedDataset:
             )
             batch["refine_crop_sizes"] = (
                 torch.tensor(
-                    crop_sizes,
+                    [
+                        size * self.refiner_crop_scale
+                        for size in crop_sizes
+                    ],
                     dtype=torch.float32,
                 )
             )
@@ -285,8 +290,13 @@ class DataCollatorForSupervisedDataset:
         return batch
 
 
-def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
-                                data_args,use_local_refiner,) -> Dict:
+def make_supervised_data_module(
+    tokenizer: transformers.PreTrainedTokenizer,
+    data_args,
+    use_local_refiner,
+    refiner_use_text,
+    refiner_crop_scale,
+) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
     dataset_cls = COCODataset
     train_dataset = dataset_cls(tokenizer=tokenizer,
@@ -298,11 +308,16 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
                                     crop_size=data_args.crop_size,
                                     conv_format=data_args.conv_format,
                                     use_dynamic_desc=data_args.use_dynamic_desc,
-                                    desc_mode=data_args.desc_mode,))
+                                    desc_mode=data_args.desc_mode,
+                                    desc_sampling_strategy=(
+                                        data_args.desc_sampling_strategy
+                                    ),))
     data_collator = (
         DataCollatorForSupervisedDataset(
             tokenizer=tokenizer,
             use_local_refiner=use_local_refiner,
+            refiner_use_text=refiner_use_text,
+            refiner_crop_scale=refiner_crop_scale,
             desc_max_length=96,
         )
     )
@@ -315,9 +330,17 @@ def train():
     parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments, LoRAArguments))
     model_args, data_args, training_args, lora_args = parser.parse_args_into_dataclasses()
+    set_global_seed(
+        training_args.seed,
+        deterministic=training_args.full_determinism,
+    )
     print("===== Data Config =====")
     print("use_dynamic_desc:", data_args.use_dynamic_desc)
     print("desc_mode:", data_args.desc_mode)
+    print(
+        "desc_sampling_strategy:",
+        data_args.desc_sampling_strategy,
+    )
     print("conv_format:", data_args.conv_format)
     print("=======================")
 
@@ -366,6 +389,12 @@ def train():
         ),
         refiner_noise_ratio=(
             model_args.refiner_noise_ratio
+        ),
+        refiner_crop_scale=(
+            model_args.refiner_crop_scale
+        ),
+        refiner_use_text=(
+            model_args.refiner_use_text
         ),
         lambda_hm=model_args.lambda_hm,
     )
@@ -451,10 +480,11 @@ def train():
         ):
             parameter.requires_grad = True
 
-        for parameter in (
-                model.description_projection.parameters()
-        ):
-            parameter.requires_grad = True
+        if model.description_projection is not None:
+            for parameter in (
+                    model.description_projection.parameters()
+            ):
+                parameter.requires_grad = True
 
 
     data_args.image_token_len = model.config.num_patches
@@ -463,6 +493,12 @@ def train():
         data_args=data_args,
         use_local_refiner=(
             model_args.use_local_refiner
+        ),
+        refiner_use_text=(
+            model_args.refiner_use_text
+        ),
+        refiner_crop_scale=(
+            model_args.refiner_crop_scale
         ),
     )
 

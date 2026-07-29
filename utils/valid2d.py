@@ -1,17 +1,14 @@
 import argparse
-from transformers import AutoTokenizer, AutoConfig
+from transformers import AutoTokenizer
 import torch
 import os
 import json
 from tqdm import tqdm
-from transformers import StoppingCriteria
 from torch.utils.data import DataLoader
 import numpy as np
-import torch.nn.functional as F
 import pickle as pk
 import time
 
-import math
 from models import ADCCRModel
 from datasets.coco import COCODataset, transform_preds
 from datasets.constants import (
@@ -23,8 +20,13 @@ from datasets.constants import (
 )
 from datasets.conversation import conv_keypoint, conv_llama2, conv_simple
 from datasets.desc_bank import DescriptionSampler
+from utils.inference import (
+    generation_sequence_confidence,
+    parse_normalized_coordinates,
+)
+from utils.metrics import coco_per_joint_pck
+from utils.reproducibility import set_global_seed
 from dataclasses import dataclass
-import re
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
@@ -108,6 +110,16 @@ class DataCollatorForSupervisedDataset(object):
                 result_dict['image_id'] = image_id
                 result_dict['c'] = c
                 result_dict['s'] = s
+                result_dict["annotation_id"] = line[
+                    "annotation_id"
+                ]
+                result_dict["bbox"] = line["bbox"]
+                result_dict["joints_orig"] = line[
+                    "joints_orig"
+                ]
+                result_dict["joints_vis_orig"] = line[
+                    "joints_vis_orig"
+                ]
                 result_dict["kpt_name"] = kpt_name
                 result_dict["description"] = kpt_des
                 batch_prompts.append(cur_prompt)
@@ -169,19 +181,34 @@ def worker(model, tokenizer, dataset, args, output_dir):
                 has_images=batch_has_images,
                 attention_mask=attention_mask,
                 do_sample=False,
-                max_new_tokens=128,
+                max_new_tokens=args.max_new_tokens,
                 output_scores=True,
                 return_dict_in_generate=True
             )
             output_ids = output_dict['sequences']
-            output_scores = output_dict['scores']
+            sequence_confidence = (
+                generation_sequence_confidence(
+                    output_dict,
+                    input_ids.shape[1],
+                )
+                .float()
+                .cpu()
+                .numpy()
+            )
 
         outputs = []
-        for input_id, output_id in zip(input_ids, output_ids):
+        for output_index, (
+            input_id,
+            output_id,
+        ) in enumerate(zip(input_ids, output_ids)):
             input_token_len = input_id.shape[0]
             n_diff_input_output = (input_id != output_id[:input_token_len]).sum().item()
             if n_diff_input_output > 0:
-                print(f'[Warning] Sample {i}: {n_diff_input_output} output_ids are not the same as the input_ids')
+                print(
+                    f"[Warning] Sample {output_index}: "
+                    f"{n_diff_input_output} output_ids differ "
+                    "from the input prefix."
+                )
             output = tokenizer.batch_decode(output_id[input_token_len:].unsqueeze(0), skip_special_tokens=True)[0]
             output = output.strip()
             outputs.append(output)
@@ -192,36 +219,19 @@ def worker(model, tokenizer, dataset, args, output_dir):
         c = result_dicts[0]['c']
         s = result_dicts[0]['s']
 
-        output_scores = torch.stack(output_scores[:-1], dim=0)
-        pattern = re.compile(r'0\.\d+')
-
         for i in range(len(outputs)):
             # decode coordinates from token
             pred_kpt = outputs[i]
-            res = pattern.findall(pred_kpt)
-            if not len(res) == 2: 
+            coordinates = parse_normalized_coordinates(
+                pred_kpt
+            )
+            if coordinates is None:
                 print('Format error', pred_kpt)
-            if len(res) == 0: continue
-            if len(res) == 1:
-                x = float(res[0]) * crop_size
-                x_pos = pred_kpt.find(res[0])
-                x_s = output_scores[x_pos:x_pos+len(res[0]), i, :].cpu()
-                x_s = F.softmax(x_s, dim=1)
-                x_s = torch.max(x_s, dim=1)[0].mean().float().item()
-                y = 0
-                y_s = 0
-            else:
-                x, y = float(res[0]), float(res[1])
-                x, y = x * crop_size, y * crop_size
-            
-                x_pos = pred_kpt.find(res[0])
-                x_s = output_scores[x_pos:x_pos+len(res[0]), i, :].cpu()
-                x_s = F.softmax(x_s, dim=1)
-                x_s = torch.max(x_s, dim=1)[0].mean().float().item()
-                y_pos = pred_kpt.find(res[1])
-                y_s = output_scores[y_pos:y_pos+len(res[1]), i, :].cpu()
-                y_s = F.softmax(y_s, dim=1)
-                y_s = torch.max(y_s, dim=1)[0].mean().float().item()
+                continue
+            x, y = coordinates
+            x, y = x * crop_size, y * crop_size
+            x_s = float(sequence_confidence[i])
+            y_s = x_s
 
             decoded_kpt[i, 0] = x
             decoded_kpt[i, 1] = y
@@ -276,6 +286,11 @@ def worker(model, tokenizer, dataset, args, output_dir):
                 dtype=torch.float32,
                 device=batch_images.device,
             )
+            local_crop_sizes *= getattr(
+                model.config,
+                "refiner_crop_scale",
+                1.0,
+            )
 
             refined_xy, _ = model.refine_coordinates(
                 images=batch_images,
@@ -295,6 +310,22 @@ def worker(model, tokenizer, dataset, args, output_dir):
 
         data = dict()
         data['image_id'] = image_id
+        data["annotation_id"] = int(
+            result_dicts[0]["annotation_id"]
+        )
+        data["bbox"] = np.asarray(
+            result_dicts[0]["bbox"],
+        ).tolist()
+        ground_truth = np.asarray(
+            result_dicts[0]["joints_orig"],
+        ).copy()
+        visibility = np.asarray(
+            result_dicts[0]["joints_vis_orig"],
+        )
+        ground_truth[:, 2] = visibility[:, 0]
+        data["gt_keypoints"] = ground_truth.reshape(
+            -1
+        ).tolist()
         data['score'] = float(np.mean(decoded_kpt[:, 2]))
         data['keypoints'] = decoded_kpt.reshape(-1).tolist()
         data['category_id'] = 1
@@ -329,9 +360,28 @@ def worker(model, tokenizer, dataset, args, output_dir):
             kpt_all_pred.extend(kpt_pred)
 
         ann_file = args.question_file
+        detailed_file = os.path.join(
+            output_dir,
+            "predictions_detailed.json",
+        )
+        with open(detailed_file, "w") as fid:
+            json.dump(kpt_all_pred, fid)
+
+        coco_results = [
+            {
+                key: item[key]
+                for key in (
+                    "image_id",
+                    "score",
+                    "keypoints",
+                    "category_id",
+                )
+            }
+            for item in kpt_all_pred
+        ]
         res_file = os.path.join(output_dir, 'pred_kpt.json')
         with open(res_file, 'w') as fid:
-            json.dump(kpt_all_pred, fid)
+            json.dump(coco_results, fid)
 
         cocoGt = COCO(ann_file)
         cocoDt = cocoGt.loadRes(res_file)
@@ -340,6 +390,41 @@ def worker(model, tokenizer, dataset, args, output_dir):
         cocoEval.evaluate()
         cocoEval.accumulate()
         cocoEval.summarize()
+
+        metric_names = (
+            "AP",
+            "AP50",
+            "AP75",
+            "APM",
+            "APL",
+            "AR",
+            "AR50",
+            "AR75",
+            "ARM",
+            "ARL",
+        )
+        metrics = {
+            name: float(value)
+            for name, value in zip(
+                metric_names,
+                cocoEval.stats.tolist(),
+            )
+        }
+        metrics["difficult_joint_metric"] = (
+            coco_per_joint_pck(kpt_all_pred)
+        )
+        metrics["protocol"] = {
+            "person_boxes": "ground-truth",
+            "flip_test": False,
+            "description_mode": args.eval_desc_mode,
+            "local_refiner": args.use_local_refiner,
+            "seed": args.seed,
+        }
+        with open(
+            os.path.join(output_dir, "metrics.json"),
+            "w",
+        ) as fid:
+            json.dump(metrics, fid, indent=2)
 
         return True
     else:
@@ -352,6 +437,7 @@ def eval_model(args):
     
     print('Init process group: world_size: {}, rank: {}'.format(world_size, rank))
     torch.cuda.set_device(rank)
+    set_global_seed(args.seed)
 
     disable_torch_init()
     model_name = os.path.expanduser(args.model_name)
@@ -380,7 +466,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-name", type=str, default="facebook/opt-350m")
     parser.add_argument("--image-folder", type=str, default="")
-    parser.add_argument("--question-file", type=str, default="tables/question.json")
+    parser.add_argument("--question-file", type=str, default="question.json")
     parser.add_argument("--answers-file", type=str, default="answer.jsonl")
     parser.add_argument("--conv-format", type=str, default="keypoint")
     parser.add_argument("--output-dir", type=str, default="")
@@ -391,6 +477,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--use-local-refiner",
         action="store_true",
+    )
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=20,
     )
     args = parser.parse_args()
 
