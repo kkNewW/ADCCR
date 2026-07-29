@@ -105,6 +105,11 @@ class COCODataset(Dataset):
                 list_data_dict.append({
                     'file_name': im_ann['file_name'],
                     'image_id': index,
+                    'annotation_id': obj['id'],
+                    'bbox': np.asarray(
+                        obj['clean_bbox'],
+                        dtype=np.float32,
+                    ),
                     'center': center,
                     'scale': scale,
                     'joints_3d': joints_3d,
@@ -145,6 +150,10 @@ class COCODataset(Dataset):
         self.is_train = is_train
         self.use_dynamic_desc = self.multimodal_cfg.get("use_dynamic_desc", False)
         self.desc_mode = self.multimodal_cfg.get("desc_mode", "dynamic")
+        self.desc_sampling_strategy = self.multimodal_cfg.get(
+            "desc_sampling_strategy",
+            "default",
+        )
         valid_desc_modes = {
             "dynamic",
             "name_only",
@@ -152,13 +161,17 @@ class COCODataset(Dataset):
             "name_relation",
             "name_anatomy_relation",
             "all",
+            "question_templates",
         }
 
         if self.desc_mode not in valid_desc_modes:
             raise ValueError(
                 f"Invalid desc_mode: {self.desc_mode}"
             )
-        self.desc_sampler = DescriptionSampler(DESCRIPTION_BANK)
+        self.desc_sampler = DescriptionSampler(
+            DESCRIPTION_BANK,
+            strategy=self.desc_sampling_strategy,
+        )
 
 
     def __len__(self):
@@ -183,6 +196,14 @@ class COCODataset(Dataset):
         image_id = sources['image_id']
         result_dict['images'] = image
         result_dict['image_id'] = image_id
+        result_dict['annotation_id'] = sources['annotation_id']
+        result_dict['bbox'] = sources['bbox'].copy()
+        result_dict['joints_orig'] = (
+            sources['joints_3d'].copy()
+        )
+        result_dict['joints_vis_orig'] = (
+            sources['joints_3d_vis'].copy()
+        )
         result_dict['c'] = c
         result_dict['s'] = s
         result_dict['joints'] = joints
@@ -220,7 +241,15 @@ class COCODataset(Dataset):
             x_norm = x / self.size
             y_norm = y /self.size
             location_tokens = "[{:.3f},{:.3f}]".format(x_norm, y_norm)
-            if self.use_dynamic_desc:
+            if (
+                self.use_dynamic_desc
+                and self.desc_mode == "question_templates"
+            ):
+                desc_text = random.choice(
+                    KeypointLocationQuestion[kp_name]
+                )
+                sampled_mode = "question_templates"
+            elif self.use_dynamic_desc:
                 requested_mode = (
                     None
                     if self.desc_mode == "dynamic"
@@ -357,10 +386,10 @@ class COCODataset(Dataset):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
         # process image
-        joints = sources['joints_3d']
-        joints_vis = sources['joints_3d_vis']
-        c = sources['center']
-        s = sources['scale']
+        joints = sources['joints_3d'].copy()
+        joints_vis = sources['joints_3d_vis'].copy()
+        c = sources['center'].copy()
+        s = sources['scale'].copy()
         r = 0
 
         if self.data_aug:
@@ -491,6 +520,5 @@ def get_dir(src_point, rot_rad):
     src_result[1] = src_point[0] * sn + src_point[1] * cs
 
     return src_result
-
 
 

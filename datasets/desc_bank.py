@@ -3,6 +3,14 @@ import random
 
 
 class DescriptionSampler:
+    DEFAULT_PROBS = {
+        "name_only": 0.15,
+        "name_anatomy": 0.25,
+        "name_relation": 0.25,
+        "name_anatomy_relation": 0.20,
+        "all": 0.15,
+    }
+
     VALID_MODES = {
         "name_only",
         "name_anatomy",
@@ -34,16 +42,29 @@ class DescriptionSampler:
         self,
         description_bank,
         probs=None,
+        strategy="default",
     ):
         self.description_bank = description_bank
-
-        self.probs = probs or {
-            "name_only": 0.15,
-            "name_anatomy": 0.25,
-            "name_relation": 0.25,
-            "name_anatomy_relation": 0.20,
-            "all": 0.15,
-        }
+        if probs is not None and strategy != "default":
+            raise ValueError(
+                "Provide either explicit probabilities or a "
+                "named strategy, not both."
+            )
+        if probs is not None:
+            self.probs = probs
+        elif strategy == "default":
+            self.probs = self.DEFAULT_PROBS.copy()
+        elif strategy == "uniform":
+            probability = 1.0 / len(self.VALID_MODES)
+            self.probs = {
+                mode: probability
+                for mode in sorted(self.VALID_MODES)
+            }
+        else:
+            raise ValueError(
+                "Description sampling strategy must be "
+                "'default' or 'uniform'."
+            )
 
         unknown_modes = (
             set(self.probs)
