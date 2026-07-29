@@ -1,0 +1,13 @@
+name: adccr
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.10.13
+  - pytorch=2.0.1
+  - torchvision=0.15.2
+  - pytorch-cuda=11.7
+  - pip=23.2.1
+  - pip:
+      - -r requirements.txt
