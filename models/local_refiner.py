@@ -75,6 +75,7 @@ class LocalRefiner(nn.Module):
         text_dim=768,
         feat_dim=256,
         hm_size=64,
+        use_text=True,
     ):
         super().__init__()
 
@@ -83,9 +84,14 @@ class LocalRefiner(nn.Module):
             feat_dim=feat_dim,
         )
 
-        self.fusion = FiLMFusion(
-            feat_dim=feat_dim,
-            text_dim=text_dim,
+        self.use_text = use_text
+        self.fusion = (
+            FiLMFusion(
+                feat_dim=feat_dim,
+                text_dim=text_dim,
+            )
+            if use_text
+            else None
         )
 
         self.heatmap_head = nn.Sequential(
@@ -108,10 +114,16 @@ class LocalRefiner(nn.Module):
 
     def forward(self, patches, text_features):
         features = self.backbone(patches)
-        features = self.fusion(
-            features,
-            text_features,
-        )
+        if self.use_text:
+            if text_features is None:
+                raise ValueError(
+                    "text_features are required when "
+                    "use_text=True."
+                )
+            features = self.fusion(
+                features,
+                text_features,
+            )
 
         heatmaps = self.heatmap_head(features)
 

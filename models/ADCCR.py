@@ -80,6 +80,8 @@ class ADCCRConfig(LlamaConfig):
         refiner_feat_dim=256,
         refiner_sigma=2.0,
         refiner_noise_ratio=0.25,
+        refiner_crop_scale=1.0,
+        refiner_use_text=True,
         lambda_hm=0.5,
         **kwargs,
     ):
@@ -104,6 +106,8 @@ class ADCCRConfig(LlamaConfig):
         self.refiner_feat_dim = refiner_feat_dim
         self.refiner_sigma = refiner_sigma
         self.refiner_noise_ratio = refiner_noise_ratio
+        self.refiner_crop_scale = refiner_crop_scale
+        self.refiner_use_text = refiner_use_text
         self.lambda_hm = lambda_hm
 
         super().__init__(**kwargs)
@@ -157,7 +161,10 @@ class ADCCRModel(LlamaForCausalLM):
         self.local_refiner = None
         self.description_projection = None
 
-        if config.use_local_refiner:
+        if (
+            config.use_local_refiner
+            and config.refiner_use_text
+        ):
             self.description_projection = nn.Sequential(
                 nn.LayerNorm(config.hidden_size),
                 nn.Linear(
@@ -170,6 +177,14 @@ class ADCCRModel(LlamaForCausalLM):
                 text_dim=config.refiner_text_dim,
                 feat_dim=config.refiner_feat_dim,
                 hm_size=config.refiner_heatmap_size,
+                use_text=config.refiner_use_text,
+            )
+        elif config.use_local_refiner:
+            self.local_refiner = LocalRefiner(
+                text_dim=config.refiner_text_dim,
+                feat_dim=config.refiner_feat_dim,
+                hm_size=config.refiner_heatmap_size,
+                use_text=False,
             )
 
     def get_model(self):
@@ -277,10 +292,12 @@ class ADCCRModel(LlamaForCausalLM):
             output_size=self.config.refiner_input_size,
         )
 
-        text_features = self.encode_descriptions(
-            desc_input_ids=desc_input_ids,
-            desc_attention_mask=desc_attention_mask,
-        )
+        text_features = None
+        if self.config.refiner_use_text:
+            text_features = self.encode_descriptions(
+                desc_input_ids=desc_input_ids,
+                desc_attention_mask=desc_attention_mask,
+            )
 
         predicted_heatmaps = self.local_refiner(
             patches,
@@ -342,10 +359,12 @@ class ADCCRModel(LlamaForCausalLM):
             output_size=self.config.refiner_input_size,
         )
 
-        text_features = self.encode_descriptions(
-            desc_input_ids,
-            desc_attention_mask,
-        )
+        text_features = None
+        if self.config.refiner_use_text:
+            text_features = self.encode_descriptions(
+                desc_input_ids,
+                desc_attention_mask,
+            )
 
         heatmaps = self.local_refiner(
             patches,
@@ -465,13 +484,18 @@ class ADCCRModel(LlamaForCausalLM):
             loss = loss_fct(shift_logits, shift_labels)
 
         if self.training and self.config.use_local_refiner:
-            required_refiner_inputs = (
-                desc_input_ids,
-                desc_attention_mask,
+            required_refiner_inputs = [
                 refine_target_xy,
                 refine_crop_sizes,
                 refine_image_indices,
-            )
+            ]
+            if self.config.refiner_use_text:
+                required_refiner_inputs.extend(
+                    [
+                        desc_input_ids,
+                        desc_attention_mask,
+                    ]
+                )
 
             if any(
                     item is None
