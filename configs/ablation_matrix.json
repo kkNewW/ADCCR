@@ -1,0 +1,197 @@
+{
+  "schema_version": 1,
+  "experiments": [
+    {
+      "name": "module_baseline",
+      "result_groups": ["module_ablation", "difficult_joints"],
+      "overrides": {
+        "stages.train.args.use_dynamic_desc": false,
+        "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.use_dynamic_desc": false,
+        "stages.eval_coco.args.eval_desc_mode": "fixed",
+        "stages.eval_coco.args.use_local_refiner": false
+      }
+    },
+    {
+      "name": "module_description_bank",
+      "result_groups": ["module_ablation", "difficult_joints"],
+      "overrides": {
+        "stages.train.args.use_dynamic_desc": true,
+        "stages.train.args.desc_mode": "all",
+        "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.eval_desc_mode": "all",
+        "stages.eval_coco.args.use_local_refiner": false
+      }
+    },
+    {
+      "name": "module_dynamic_sampling",
+      "result_groups": ["module_ablation", "difficult_joints"],
+      "overrides": {
+        "stages.train.args.use_dynamic_desc": true,
+        "stages.train.args.desc_mode": "dynamic",
+        "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.eval_desc_mode": "all",
+        "stages.eval_coco.args.use_local_refiner": false
+      }
+    },
+    {
+      "name": "module_local_refinement",
+      "result_groups": ["module_ablation", "difficult_joints"],
+      "overrides": {
+        "stages.train.args.use_dynamic_desc": false,
+        "stages.train.args.use_local_refiner": true,
+        "stages.eval_coco.args.use_dynamic_desc": false,
+        "stages.eval_coco.args.eval_desc_mode": "fixed",
+        "stages.eval_coco.args.use_local_refiner": true
+      }
+    },
+    {
+      "name": "full_model",
+      "result_groups": ["module_ablation", "difficult_joints", "description_ablation", "sampling_ablation", "refiner_sensitivity"],
+      "overrides": {}
+    },
+    {
+      "name": "description_name_only",
+      "result_groups": ["description_ablation"],
+      "overrides": {
+        "stages.train.args.desc_mode": "name_only",
+        "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.eval_desc_mode": "name_only",
+        "stages.eval_coco.args.use_local_refiner": false
+      }
+    },
+    {
+      "name": "description_name_anatomy",
+      "result_groups": ["description_ablation"],
+      "overrides": {
+        "stages.train.args.desc_mode": "name_anatomy",
+        "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.eval_desc_mode": "name_anatomy",
+        "stages.eval_coco.args.use_local_refiner": false
+      }
+    },
+    {
+      "name": "description_name_relation",
+      "result_groups": ["description_ablation"],
+      "overrides": {
+        "stages.train.args.desc_mode": "name_relation",
+        "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.eval_desc_mode": "name_relation",
+        "stages.eval_coco.args.use_local_refiner": false
+      }
+    },
+    {
+      "name": "description_name_anatomy_relation",
+      "result_groups": ["description_ablation"],
+      "overrides": {
+        "stages.train.args.desc_mode": "name_anatomy_relation",
+        "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.eval_desc_mode": "name_anatomy_relation",
+        "stages.eval_coco.args.use_local_refiner": false
+      }
+    },
+    {
+      "name": "description_all_fields",
+      "result_groups": ["description_ablation", "sampling_ablation"],
+      "overrides": {
+        "stages.train.args.desc_mode": "all",
+        "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.eval_desc_mode": "all",
+        "stages.eval_coco.args.use_local_refiner": false
+      }
+    },
+    {
+      "name": "sampling_uniform",
+      "result_groups": ["sampling_ablation"],
+      "overrides": {
+        "stages.train.args.desc_mode": "dynamic",
+        "stages.train.args.desc_sampling_strategy": "uniform"
+      }
+    },
+    {
+      "name": "sampling_question_templates",
+      "result_groups": ["sampling_ablation"],
+      "overrides": {
+        "stages.train.args.desc_mode": "question_templates",
+        "stages.eval_coco.args.eval_desc_mode": "all"
+      }
+    },
+    {
+      "name": "sensitivity_crop_075",
+      "result_groups": ["refiner_sensitivity"],
+      "overrides": {
+        "stages.train.args.refiner_crop_scale": 0.75
+      }
+    },
+    {
+      "name": "sensitivity_crop_125",
+      "result_groups": ["refiner_sensitivity"],
+      "overrides": {
+        "stages.train.args.refiner_crop_scale": 1.25
+      }
+    },
+    {
+      "name": "sensitivity_sigma_1",
+      "result_groups": ["refiner_sensitivity"],
+      "overrides": {
+        "stages.train.args.refiner_sigma": 1.0
+      }
+    },
+    {
+      "name": "sensitivity_sigma_3",
+      "result_groups": ["refiner_sensitivity"],
+      "overrides": {
+        "stages.train.args.refiner_sigma": 3.0
+      }
+    },
+    {
+      "name": "sensitivity_heatmap_32",
+      "result_groups": ["refiner_sensitivity"],
+      "overrides": {
+        "stages.train.args.refiner_heatmap_size": 32
+      }
+    },
+    {
+      "name": "sensitivity_heatmap_96",
+      "result_groups": ["refiner_sensitivity"],
+      "overrides": {
+        "stages.train.args.refiner_heatmap_size": 96
+      }
+    },
+    {
+      "name": "sensitivity_noise_010",
+      "result_groups": ["refiner_sensitivity"],
+      "overrides": {
+        "stages.train.args.refiner_noise_ratio": 0.1
+      }
+    },
+    {
+      "name": "sensitivity_noise_040",
+      "result_groups": ["refiner_sensitivity"],
+      "overrides": {
+        "stages.train.args.refiner_noise_ratio": 0.4
+      }
+    },
+    {
+      "name": "sensitivity_lambda_025",
+      "result_groups": ["refiner_sensitivity"],
+      "overrides": {
+        "stages.train.args.lambda_hm": 0.25
+      }
+    },
+    {
+      "name": "sensitivity_lambda_100",
+      "result_groups": ["refiner_sensitivity"],
+      "overrides": {
+        "stages.train.args.lambda_hm": 1.0
+      }
+    },
+    {
+      "name": "sensitivity_no_text",
+      "result_groups": ["refiner_sensitivity"],
+      "overrides": {
+        "stages.train.args.refiner_use_text": false
+      }
+    }
+  ]
+}

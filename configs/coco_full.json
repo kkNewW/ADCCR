@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "experiment": "adccr_coco_full",
+  "runtime": {
+    "cuda_visible_devices": "0,1",
+    "nproc_per_node": 2,
+    "master_port": 25003
+  },
+  "stages": {
+    "train": {
+      "entrypoint": "utils/train2d.py",
+      "launcher": "torchrun",
+      "args": {
+        "model_name_or_path": "checkpoints/model_weights/vicuna-7b-v1.5",
+        "llama_path": "checkpoints/model_weights/vicuna-7b-v1.5",
+        "dino_path": "checkpoints/model_weights/dinov2_vitl14_pretrain.pth",
+        "data_path": "data/coco/annotations/person_keypoints_train2017.json",
+        "image_folder": "data/coco/train2017",
+        "conv_format": "keypoint",
+        "data_augmentation": true,
+        "use_dynamic_desc": true,
+        "desc_mode": "dynamic",
+        "desc_sampling_strategy": "default",
+        "mm_projector_type": "mlp",
+        "mm_projector_depth": 2,
+        "use_local_refiner": true,
+        "refiner_input_size": 128,
+        "refiner_heatmap_size": 64,
+        "refiner_text_dim": 768,
+        "refiner_feat_dim": 256,
+        "refiner_sigma": 2.0,
+        "refiner_noise_ratio": 0.25,
+        "refiner_crop_scale": 1.0,
+        "refiner_use_text": true,
+        "lambda_hm": 0.5,
+        "tune_mm_mlp_adapter": true,
+        "freeze_llm": false,
+        "lora_llm_enable": true,
+        "freeze_vit": false,
+        "lora_vision_enable": true,
+        "lora_llm_r": 8,
+        "lora_vision_r": 8,
+        "bf16": true,
+        "output_dir": "checkpoints/runs/adccr_coco_seed{seed}",
+        "num_train_epochs": 12,
+        "per_device_train_batch_size": 1,
+        "per_device_eval_batch_size": 1,
+        "gradient_accumulation_steps": 16,
+        "evaluation_strategy": "no",
+        "save_strategy": "steps",
+        "save_steps": 500000,
+        "save_total_limit": 1,
+        "learning_rate": 0.0005,
+        "weight_decay": 0.05,
+        "warmup_ratio": 0.03,
+        "lr_scheduler_type": "cosine",
+        "logging_steps": 1,
+        "dataloader_num_workers": 4,
+        "tf32": true,
+        "model_max_length": 2048,
+        "gradient_checkpointing": false,
+        "report_to": "tensorboard",
+        "seed": 42,
+        "data_seed": 42,
+        "full_determinism": false
+      }
+    },
+    "eval_coco": {
+      "entrypoint": "utils/valid2d.py",
+      "launcher": "torchrun",
+      "args": {
+        "model_name": "checkpoints/ckpts/coco",
+        "question_file": "data/coco/annotations/person_keypoints_val2017.json",
+        "image_folder": "data/coco/val2017",
+        "output_dir": "results/main_coco",
+        "conv_format": "keypoint",
+        "use_dynamic_desc": true,
+        "eval_desc_mode": "all",
+        "use_local_refiner": true,
+        "max_new_tokens": 20,
+        "seed": 42
+      }
+    },
+    "eval_humanart": {
+      "entrypoint": "utils/valid2d.py",
+      "launcher": "torchrun",
+      "args": {
+        "model_name": "checkpoints/ckpts/coco",
+        "question_file": "data/HumanArt/annotations/validation_humanart.json",
+        "image_folder": "data",
+        "output_dir": "results/cross_dataset_humanart",
+        "conv_format": "keypoint",
+        "use_dynamic_desc": true,
+        "eval_desc_mode": "all",
+        "use_local_refiner": true,
+        "max_new_tokens": 20,
+        "seed": 42
+      }
+    },
+    "eval_mpii": {
+      "entrypoint": "utils/valid2dmpii.py",
+      "launcher": "torchrun",
+      "args": {
+        "model_name": "checkpoints/ckpts/coco",
+        "question_file": "data/mpii/annot/valid.json",
+        "image_folder": "data/mpii",
+        "output_dir": "results/cross_dataset_mpii",
+        "conv_format": "keypoint",
+        "use_dynamic_desc": true,
+        "eval_desc_mode": "all",
+        "use_local_refiner": true,
+        "max_new_tokens": 20,
+        "seed": 42
+      }
+    },
+    "eval_novel": {
+      "entrypoint": "utils/valid_novel.py",
+      "launcher": "torchrun",
+      "args": {
+        "model_name": "checkpoints/ckpts/coco",
+        "question_file": "data/mpii/annot/valid.json",
+        "image_folder": "data/mpii",
+        "ground_truth": "data/mpii/annot/gt_valid.mat",
+        "protocol": "configs/novel_keypoints_mpii.json",
+        "output_dir": "results/novel_keypoints",
+        "use_local_refiner": true,
+        "max_new_tokens": 20,
+        "seed": 42
+      }
+    },
+    "profile": {
+      "entrypoint": "utils/profile_efficiency.py",
+      "launcher": "python",
+      "args": {
+        "model_name": "checkpoints/ckpts/coco",
+        "annotation_file": "data/coco/annotations/person_keypoints_val2017.json",
+        "image_folder": "data/coco/val2017",
+        "output_dir": "results/efficiency",
+        "sample_index": 0,
+        "warmup": 10,
+        "repetitions": 100,
+        "max_new_tokens": 20,
+        "seed": 42
+      }
+    }
+  }
+}
