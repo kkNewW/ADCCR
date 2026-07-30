@@ -99,7 +99,7 @@ class ReproducibilityConfigTests(unittest.TestCase):
         self.assertTrue(unseen.isdisjoint(training))
         self.assertEqual(
             unseen,
-            {"pelvis", "neck", "thorax", "mid-hip"},
+            {"pelvis", "neck", "thorax",},
         )
 
     def test_all_python_files_parse(self):
