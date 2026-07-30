@@ -153,13 +153,25 @@ KeypointLocationDescription = {
     'right knee': 'The right knee is the joint connecting the upper leg and lower leg on the right side, it is located between the right hip and right ankle.',
     'left ankle': 'The left ankle is the joint connecting the left lower leg and the left foot, typically located at the base of the left leg.',
     'right ankle': 'The right ankle is the joint connecting the right lower leg and the right foot, typically located at the base of the right leg.',
-    'neck': "The neck is the part of the body connecting the head to the torso, typically situated between the shoulders.",
+    'neck': (
+        "The neck is the part of the body connecting the head "
+        "to the torso, typically situated between the left "
+        "and right shoulders."
+    ),
     'torso': "The torso is the central part of the body, typically encompassing the chest, abdomen, and back.",
-    'pelvis': "The pelvis is the bony structure that forms the base of the spine and connects the torso to the lower body, typically located between the left hip and right hip.",
+    'pelvis': (
+        "The pelvis is the bony structure that forms the base "
+        "of the spine and connects the torso to the lower body, "
+        "typically located between the left hip and the right hip."
+    ),
     'left toe': "The left toe is located at the end of the left foot, typically at the front or tip of the foot.",
     'right toe': "The right toe is the digit located at the end of the right foot, typically at the front or tip of the foot.",
     'head_top': "The head_top keypoint is the highest point on their head, typically at the crown.",
-    'thorax': "The thorax is the central part of the torso, typically located between the neck and the abdomen."
+    'thorax': (
+        "The thorax is the central part of the upper torso, "
+        "typically located below the neck and between the left "
+        "and right shoulders."
+    )
 }
 
 KeypointLocationQuestion = {
