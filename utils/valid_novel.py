@@ -262,20 +262,28 @@ def _joint_index(dataset_joints, name):
     return int(matches[0])
 
 
-def _target_from_spec(spec, dataset_joints, positions, visible):
-    if isinstance(spec, str):
-        index = _joint_index(dataset_joints, spec)
-        return positions[index], visible[index]
+def _target_from_spec(
+    spec,
+    dataset_joints,
+    positions,
+    visible,
+):
+    """Read a native MPII keypoint annotation."""
 
-    if spec.get("operation") != "midpoint":
-        raise ValueError(f"Unsupported ground-truth spec: {spec}")
-    indices = [
-        _joint_index(dataset_joints, name)
-        for name in spec["joints"]
-    ]
-    midpoint = positions[indices].mean(axis=0)
-    midpoint_visible = visible[indices].all(axis=0)
-    return midpoint, midpoint_visible
+    if not isinstance(spec, str):
+        raise ValueError(
+            "Novel-keypoint ground truth must be a native "
+            f"MPII joint name, got: {spec}"
+        )
+
+    index = _joint_index(
+        dataset_joints,
+        spec,
+    )
+    return (
+        positions[index],
+        visible[index],
+    )
 
 
 def evaluate_predictions(predictions, protocol, ground_truth_file):
@@ -315,16 +323,34 @@ def evaluate_predictions(predictions, protocol, ground_truth_file):
             ],
             dtype=bool,
         )
-        errors = np.linalg.norm(predicted + 1.0 - target, axis=0)
+        errors = np.linalg.norm(
+            predicted + 1.0 - target,
+            axis=0,
+        )
         normalized = errors / head_sizes
-        valid_mask = target_visible.astype(bool) & prediction_valid
-        count = int(valid_mask.sum())
+
+        # The PCKh denominator is determined by the
+        # availability of the MPII ground-truth annotation.
+        ground_truth_valid = target_visible.astype(bool)
+
+        # A malformed or missing prediction is retained in
+        # the denominator and counted as an incorrect result.
+        correct_mask = (
+                ground_truth_valid
+                & prediction_valid
+                & (
+                        normalized
+                        <= metric["threshold"]
+                )
+        )
+
+        count = int(
+            ground_truth_valid.sum()
+        )
+
         score = (
             100.0
-            * np.logical_and(
-                normalized <= metric["threshold"],
-                valid_mask,
-            ).sum()
+            * correct_mask.sum()
             / count
             if count
             else None
@@ -349,19 +375,42 @@ def evaluate_predictions(predictions, protocol, ground_truth_file):
         )
 
     return {
+        "dataset": protocol["dataset"],
+        "num_instances": len(predictions),
         "metric": metric,
         "scores": grouped_scores,
         "per_query_scores": {
             query["name"]: query_scores[index]
-            for index, query in enumerate(protocol["queries"])
+            for index, query in enumerate(
+                protocol["queries"]
+            )
         },
         "sample_counts": {
             query["name"]: query_counts[index]
-            for index, query in enumerate(protocol["queries"])
+            for index, query in enumerate(
+                protocol["queries"]
+            )
+        },
+        "ground_truth_definition": (
+            protocol["ground_truth_definition"]
+        ),
+        "inference_descriptions": {
+            query["name"]: query["description"]
+            for query in protocol["queries"]
+            if query["status"] == "unseen"
         },
         "protocol": {
             "dataset": protocol["dataset"],
+            "num_instances": protocol[
+                "num_instances"
+            ],
+            "annotation_source": protocol[
+                "annotation_source"
+            ],
             "ground_truth": ground_truth_file,
+            "training_keypoints": protocol[
+                "training_keypoints"
+            ],
             "unseen_training_check": "passed",
         },
     }
