@@ -1,14 +1,24 @@
 {
   "schema_version": 1,
   "dataset": "MPII validation set",
+  "num_instances": 2958,
   "annotation_source": {
     "instances": "data/mpii/annot/valid.json",
-    "ground_truth": "data/mpii/annot/gt_valid.mat"
+    "ground_truth": "data/mpii/annot/gt_valid.mat",
+    "description": "Official MPII validation annotations"
+  },
+  "ground_truth_definition": {
+    "pelvis": "Native MPII pelvis annotation (pelv)",
+    "neck": "Native MPII neck annotation (neck)",
+    "thorax": "Native MPII thorax annotation (thor)"
   },
   "metric": {
     "name": "PCKh@0.5",
     "threshold": 0.5,
-    "head_size_bias": 0.6
+    "head_size_bias": 0.6,
+    "normalization": "0.6 times the annotated MPII head-box diagonal",
+    "missing_annotation_policy": "exclude",
+    "invalid_prediction_policy": "count as incorrect"
   },
   "training_keypoints": [
     "nose",
@@ -100,7 +110,7 @@
       "status": "unseen",
       "ground_truth": "pelv",
       "crop_size": 128,
-      "description": "The pelvis is the central lower-torso landmark at the base of the spine, located between the left hip and the right hip."
+      "description": "The pelvis is the bony structure that forms the base of the spine and connects the torso to the lower body, typically located between the left hip and the right hip."
     },
     {
       "name": "neck",
@@ -108,7 +118,7 @@
       "status": "unseen",
       "ground_truth": "neck",
       "crop_size": 96,
-      "description": "The neck is the landmark connecting the head to the torso, located centrally between the left and right shoulders."
+      "description": "The neck is the part of the body connecting the head to the torso, typically situated between the left and right shoulders."
     },
     {
       "name": "thorax",
@@ -116,21 +126,7 @@
       "status": "unseen",
       "ground_truth": "thor",
       "crop_size": 128,
-      "description": "The thorax is the central upper-torso landmark on the chest, below the neck and between the shoulders."
-    },
-    {
-      "name": "mid-hip",
-      "group": "Mid-hip",
-      "status": "unseen",
-      "ground_truth": {
-        "operation": "midpoint",
-        "joints": [
-          "lhip",
-          "rhip"
-        ]
-      },
-      "crop_size": 128,
-      "description": "The mid-hip is the midpoint between the left hip and the right hip in the lower torso."
+      "description": "The thorax is the central part of the upper torso, typically located below the neck and between the left and right shoulders."
     }
   ]
 }
