@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "dataset": "coco_val2017",
+  "variants": [
+    "canonical",
+    "paraphrase",
+    "shortened",
+    "corrupted",
+    "alternative"
+  ],
+  "question_templates": {
+    "canonical": "Where is the {keypoint} of this person in this image? Please provide its coordinates.",
+    "paraphrase": "Where is the {keypoint} of this person in this image? Please provide its coordinates.",
+    "shortened": "Return only the normalized [x,y] coordinate pair for this keypoint.",
+    "corrupted": "Where is the {keypoint} of this person in this image? Please provide its coordinates.",
+    "alternative": "Identify the described landmark and return only its normalized [x,y] coordinate pair."
+  },
+  "description_sources": {
+    "canonical": "canonical",
+    "paraphrase": "paraphrase",
+    "shortened": "shortened",
+    "corrupted": "corrupted",
+    "alternative": "canonical"
+  },
+  "descriptions": {
+    "nose": {
+      "canonical": "Target keypoint: nose. The nose is located in the center of the face. It is between the left eye and the right eye, and above the mouth. It is usually near the central facial region.",
+      "paraphrase": "The nose marks the central facial point between the two eyes and above the mouth.",
+      "shortened": "nose.",
+      "corrupted": "Target keypoint: nose. The nose is locatde in the center of the face, between the left and right eyes and above the mouth."
+    },
+    "left eye": {
+      "canonical": "Target keypoint: left eye. The left eye is the visual organ located on the left side of the face. It is to the left of the nose and above the left cheek, at the same horizontal level as the right eye. It usually appears as a dark circular or almond-shaped region in the upper left facial area, with a white sclera and dark pupil visible.",
+      "paraphrase": "The left eye is the visual landmark on the left side of the face, positioned beside the nose and above the left cheek.",
+      "shortened": "left eye.",
+      "corrupted": "Target keypoint: left eye. The left eye is the visaul organ on the left side of the face, beside the nose and above the left cheek."
+    },
+    "right eye": {
+      "canonical": "Target keypoint: right eye. The right eye is the visual organ located on the right side of the face. It is to the right of the nose and above the right cheek, at the same horizontal level as the left eye. It usually appears as a dark circular or almond-shaped region in the upper right facial area, with a white sclera and dark pupil visible.",
+      "paraphrase": "The right eye is the visual landmark on the right side of the face, positioned beside the nose and above the right cheek.",
+      "shortened": "right eye.",
+      "corrupted": "Target keypoint: right eye. The right eye is the visaul organ on the right side of the face, beside the nose and above the right cheek."
+    },
+    "left ear": {
+      "canonical": "Target keypoint: left ear. The left ear is the auditory organ located on the left side of the head. It is on the left side of the head, at approximately the same horizontal level as the eyes and nose, opposite to the right ear. It usually appears as a curved, shell-like structure on the left side of the head, partially visible from frontal views and fully visible from side views.",
+      "paraphrase": "The left ear is the hearing structure on the left side of the head, roughly level with the eyes and nose.",
+      "shortened": "left ear.",
+      "corrupted": "Target keypoint: left ear. The left ear is the audtiory organ on the left side of the head, approximately level with the eyes and nose."
+    },
+    "right ear": {
+      "canonical": "Target keypoint: right ear. The right ear is the auditory organ located on the right side of the head. It is on the right side of the head, at approximately the same horizontal level as the eyes and nose, opposite to the left ear. It usually appears as a curved, shell-like structure on the right side of the head, partially visible from frontal views and fully visible from side views.",
+      "paraphrase": "The right ear is the hearing structure on the right side of the head, roughly level with the eyes and nose.",
+      "shortened": "right ear.",
+      "corrupted": "Target keypoint: right ear. The right ear is the audtiory organ on the right side of the head, approximately level with the eyes and nose."
+    },
+    "left shoulder": {
+      "canonical": "Target keypoint: left shoulder. The left shoulder is the joint connecting the left arm to the torso, formed by the humerus, scapula, and clavicle. It is at the top of the left arm, below the neck, and to the left of the chest, opposite to the right shoulder. It usually appears as a rounded contour at the junction between the neck and the left arm, often forming the widest point of the upper body silhouette.",
+      "paraphrase": "The left shoulder is the upper-body joint where the left arm meets the torso, below the neck.",
+      "shortened": "left shoulder.",
+      "corrupted": "Target keypoint: left shoulder. The left shoulder is the joint conencting the left arm to the torso, at the top of the left arm and below the neck."
+    },
+    "right shoulder": {
+      "canonical": "Target keypoint: right shoulder. The right shoulder is the joint connecting the right arm to the torso, formed by the humerus, scapula, and clavicle. It is at the top of the right arm, below the neck, and to the right of the chest, opposite to the left shoulder. It usually appears as a rounded contour at the junction between the neck and the right arm, often forming the widest point of the upper body silhouette.",
+      "paraphrase": "The right shoulder is the upper-body joint where the right arm meets the torso, below the neck.",
+      "shortened": "right shoulder.",
+      "corrupted": "Target keypoint: right shoulder. The right shoulder is the joint conencting the right arm to the torso, at the top of the right arm and below the neck."
+    },
+    "left elbow": {
+      "canonical": "Target keypoint: left elbow. The left elbow is the hinge joint connecting the left upper arm and left forearm. It is located between the left shoulder and the left wrist, at the middle of the left arm. It usually appears near the bending point of the left arm, often showing a prominent bony point or angle when the arm is bent.",
+      "paraphrase": "The left elbow is the bending joint midway along the left arm, between the left shoulder and left wrist.",
+      "shortened": "left elbow.",
+      "corrupted": "Target keypoint: left elbow. The left elbow is the hnige joint between the left upper arm and forearm, between the left shoulder and left wrist."
+    },
+    "right elbow": {
+      "canonical": "Target keypoint: right elbow. The right elbow is the hinge joint connecting the right upper arm and right forearm. It is located between the right shoulder and the right wrist, at the middle of the right arm. It usually appears near the bending point of the right arm, often showing a prominent bony point or angle when the arm is bent.",
+      "paraphrase": "The right elbow is the bending joint midway along the right arm, between the right shoulder and right wrist.",
+      "shortened": "right elbow.",
+      "corrupted": "Target keypoint: right elbow. The right elbow is the hnige joint between the right upper arm and forearm, between the right shoulder and right wrist."
+    },
+    "left wrist": {
+      "canonical": "Target keypoint: left wrist. The left wrist is the joint connecting the left forearm and the left hand. It is below the left elbow and near the end of the left arm. It usually appears near the end of the left arm contour.",
+      "paraphrase": "The left wrist lies where the left forearm meets the hand, near the distal end of the arm.",
+      "shortened": "left wrist.",
+      "corrupted": "Target keypoint: left wrist. The left wrist is the joint conencting the left forearm and hand, below the left elbow near the end of the arm."
+    },
+    "right wrist": {
+      "canonical": "Target keypoint: right wrist. The right wrist is the joint connecting the right forearm and the right hand. It is below the right elbow and near the end of the right arm, opposite to the left wrist. It usually appears near the end of the right arm contour, showing a narrower section before the hand begins.",
+      "paraphrase": "The right wrist lies where the right forearm meets the hand, near the distal end of the arm.",
+      "shortened": "right wrist.",
+      "corrupted": "Target keypoint: right wrist. The right wrist is the joint conencting the right forearm and hand, below the right elbow near the end of the arm."
+    },
+    "left hip": {
+      "canonical": "Target keypoint: left hip. The left hip is the joint connecting the left leg to the pelvis, formed by the femur and hip bone. It is at the top of the left leg, below the waist, and to the left of the lower torso, opposite to the right hip. It usually appears near the side contour of the lower torso, at the junction where the leg meets the body, often showing a curved transition from waist to thigh.",
+      "paraphrase": "The left hip is the lower-torso joint joining the pelvis to the left thigh.",
+      "shortened": "left hip.",
+      "corrupted": "Target keypoint: left hip. The left hip is the joint conencting the pelvis and left thigh, at the top of the left leg below the waist."
+    },
+    "right hip": {
+      "canonical": "Target keypoint: right hip. The right hip is the joint connecting the right leg to the pelvis, formed by the femur and hip bone. It is at the top of the right leg, below the waist, and to the right of the lower torso, opposite to the left hip. It usually appears near the side contour of the lower torso, at the junction where the leg meets the body, often showing a curved transition from waist to thigh.",
+      "paraphrase": "The right hip is the lower-torso joint joining the pelvis to the right thigh.",
+      "shortened": "right hip.",
+      "corrupted": "Target keypoint: right hip. The right hip is the joint conencting the pelvis and right thigh, at the top of the right leg below the waist."
+    },
+    "left knee": {
+      "canonical": "Target keypoint: left knee. The left knee is the joint connecting the left thigh and the left lower leg. It is located between the left hip and the left ankle. It often appears near the bending contour of the left leg.",
+      "paraphrase": "The left knee is the bending joint between the left thigh and lower leg, midway from the left hip to the left ankle.",
+      "shortened": "left knee.",
+      "corrupted": "Target keypoint: left knee. The left knee is the joint conencting the left thigh and lower leg, between the left hip and left ankle."
+    },
+    "right knee": {
+      "canonical": "Target keypoint: right knee. The right knee is the joint connecting the right thigh and the right lower leg. It is located between the right hip and the right ankle, opposite to the left knee. It often appears near the bending contour of the right leg, showing a rounded or angular shape when the leg is bent, or a slight bulge when straight.",
+      "paraphrase": "The right knee is the bending joint between the right thigh and lower leg, midway from the right hip to the right ankle.",
+      "shortened": "right knee.",
+      "corrupted": "Target keypoint: right knee. The right knee is the joint conencting the right thigh and lower leg, between the right hip and right ankle."
+    },
+    "left ankle": {
+      "canonical": "Target keypoint: left ankle. The left ankle is the joint connecting the left lower leg and the left foot. It is below the left knee and at the end of the left leg, just above the foot, opposite to the right ankle. It usually appears as a narrower section near the end of the left leg, showing the transition from the calf to the foot, often with visible bony protrusions on each side.",
+      "paraphrase": "The left ankle is the joint at the base of the left lower leg where it meets the foot.",
+      "shortened": "left ankle.",
+      "corrupted": "Target keypoint: left ankle. The left ankle is the joint conencting the left lower leg and foot, below the left knee at the end of the leg."
+    },
+    "right ankle": {
+      "canonical": "Target keypoint: right ankle. The right ankle is the joint connecting the right lower leg and the right foot. It is below the right knee and at the end of the right leg, just above the foot, opposite to the left ankle. It usually appears as a narrower section near the end of the right leg, showing the transition from the calf to the foot, often with visible bony protrusions on each side.",
+      "paraphrase": "The right ankle is the joint at the base of the right lower leg where it meets the foot.",
+      "shortened": "right ankle.",
+      "corrupted": "Target keypoint: right ankle. The right ankle is the joint conencting the right lower leg and foot, below the right knee at the end of the leg."
+    }
+  }
+}
