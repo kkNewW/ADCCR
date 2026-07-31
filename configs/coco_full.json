@@ -76,6 +76,8 @@
         "conv_format": "keypoint",
         "use_dynamic_desc": true,
         "eval_desc_mode": "all",
+        "prompt_variant_file": null,
+        "prompt_variant": "canonical",
         "use_local_refiner": true,
         "max_new_tokens": 20,
         "seed": 42
