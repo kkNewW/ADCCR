@@ -125,6 +125,7 @@ def validate_inputs(stage):
         "ground_truth",
         "protocol",
         "annotation_file",
+        "prompt_variant_file",
     )
     missing = []
     for key in path_keys:
