@@ -14,7 +14,6 @@ from datasets.coco import COCODataset, transform_preds
 from datasets.constants import (
     COCO_KEYPOINT_NAME,
     KeypointLocationDescription,
-    KeypointLocationQuestion,
     DESCRIPTION_BANK,
     CROP_SIZE_MAP
 )
@@ -25,6 +24,11 @@ from utils.inference import (
     parse_normalized_coordinates,
 )
 from utils.metrics import coco_per_joint_pck
+from utils.prompt_variants import (
+    PROMPT_VARIANTS,
+    PromptVariantBank,
+    prompt_file_sha256,
+)
 from utils.reproducibility import set_global_seed
 from dataclasses import dataclass
 from pycocotools.coco import COCO
@@ -44,20 +48,57 @@ PREFIX_IMAGE = "Image: "
 
 @dataclass
 class DataCollatorForSupervisedDataset(object):
-    def __init__(self, image_token_len, conv_format, use_dynamic_desc=False, eval_desc_mode="fixed"):
+    def __init__(
+        self,
+        image_token_len,
+        conv_format,
+        use_dynamic_desc=False,
+        eval_desc_mode="fixed",
+        prompt_variant_file=None,
+        prompt_variant="canonical",
+    ):
         self.image_token_len = image_token_len
         self.conv_format = conv_format
         self.use_dynamic_desc = use_dynamic_desc
         self.eval_desc_mode = eval_desc_mode
-        self.desc_sampler = DescriptionSampler(DESCRIPTION_BANK)
+        self.prompt_variant = prompt_variant
+        self.desc_sampler = DescriptionSampler(
+            DESCRIPTION_BANK
+        )
+
+        self.prompt_bank = None
+        if prompt_variant_file:
+            self.prompt_bank = PromptVariantBank(
+                prompt_variant_file,
+                expected_keypoints=COCO_KEYPOINT_NAME,
+            )
+
     def _get_description(self, kpt_name):
-        if not self.use_dynamic_desc or self.eval_desc_mode == "fixed":
+        if (
+            not self.use_dynamic_desc
+            or self.eval_desc_mode == "fixed"
+        ):
             return KeypointLocationDescription[kpt_name]
 
-        # 支持指定某种描述模式，例如:
-        # name_only / name_anatomy / name_relation / name_anatomy_relation / all
-        desc_text, _ = self.desc_sampler.build_description(kpt_name, mode=self.eval_desc_mode)
+        desc_text, _ = self.desc_sampler.build_description(
+            kpt_name,
+            mode=self.eval_desc_mode,
+        )
         return desc_text
+
+    def _get_prompt_parts(self, kpt_name):
+        if self.prompt_bank is not None:
+            return self.prompt_bank.get(
+                self.prompt_variant,
+                kpt_name,
+            )
+
+        description = self._get_description(kpt_name)
+        question = (
+            f"Where is the {kpt_name} of this person in this "
+            "image? Please provide its coordinates."
+        )
+        return description, question
 
     def __call__(self, instances):
         """Collate examples for supervised fine-tuning."""
@@ -79,23 +120,45 @@ class DataCollatorForSupervisedDataset(object):
             image_id = line['image_id']
             c = line['c']
             s = line['s']
-            for kpt_id, kpt_name in enumerate(COCO_KEYPOINT_NAME):
-                question = KeypointLocationQuestion[kpt_name][0]
-                kpt_des = self._get_description(kpt_name)
+            for kpt_id, kpt_name in enumerate(
+                    COCO_KEYPOINT_NAME
+            ):
+                kpt_des, question = self._get_prompt_parts(
+                    kpt_name
+                )
 
                 conv.messages = []
-                if self.conv_format == 'keypoint':
-                    q1 = "Where is the {} of this person in this image? Please provide its coordinates.".format(kpt_name.replace("_", " "))
-                    conv.append_message(conv.roles[0], kpt_des)
-                    conv.append_message(conv.roles[1], q1)
-                    conv.append_message(conv.roles[2], None)
-                elif self.conv_format == 'simple':
-                    q1 = "Where is the {} of this person in this image? Please provide its coordinates.".format(kpt_name.replace("_", " "))
-                    conv.append_message(conv.roles[0], q1)
-                    conv.append_message(conv.roles[1], None)
+                if self.conv_format == "keypoint":
+                    conv.append_message(
+                        conv.roles[0],
+                        kpt_des,
+                    )
+                    conv.append_message(
+                        conv.roles[1],
+                        question,
+                    )
+                    conv.append_message(
+                        conv.roles[2],
+                        None,
+                    )
+                elif self.conv_format == "simple":
+                    conv.append_message(
+                        conv.roles[0],
+                        question,
+                    )
+                    conv.append_message(
+                        conv.roles[1],
+                        None,
+                    )
                 else:
-                    conv.append_message(conv.roles[0], question)
-                    conv.append_message(conv.roles[1], None)
+                    conv.append_message(
+                        conv.roles[0],
+                        question,
+                    )
+                    conv.append_message(
+                        conv.roles[1],
+                        None,
+                    )
                 
                 if self.conv_format == 'llama2':
                     conv.system = "[INST] <<SYS>>\n{system_message}\n<</SYS>>\n\n".format(system_message=PREFIX_IMAGE + self.image_token_len * DEFAULT_IMAGE_PATCH_TOKEN)
@@ -122,6 +185,10 @@ class DataCollatorForSupervisedDataset(object):
                 ]
                 result_dict["kpt_name"] = kpt_name
                 result_dict["description"] = kpt_des
+                result_dict["question"] = question
+                result_dict["prompt_variant"] = (
+                    self.prompt_variant
+                )
                 batch_prompts.append(cur_prompt)
                 batch_images.append(images)
                 batch_has_images.append(has_images)
@@ -153,6 +220,8 @@ def worker(model, tokenizer, dataset, args, output_dir):
             conv_format=args.conv_format,
             use_dynamic_desc=args.use_dynamic_desc,
             eval_desc_mode=args.eval_desc_mode,
+            prompt_variant_file=args.prompt_variant_file,
+            prompt_variant=args.prompt_variant,
         )
     )
 
@@ -417,6 +486,13 @@ def worker(model, tokenizer, dataset, args, output_dir):
             "person_boxes": "ground-truth",
             "flip_test": False,
             "description_mode": args.eval_desc_mode,
+            "prompt_variant": args.prompt_variant,
+            "prompt_variant_file": (
+                args.prompt_variant_file
+            ),
+            "prompt_variant_sha256": prompt_file_sha256(
+                args.prompt_variant_file
+            ),
             "local_refiner": args.use_local_refiner,
             "seed": args.seed,
         }
@@ -474,6 +550,17 @@ if __name__ == "__main__":
     parser.add_argument("--use-dynamic-desc", action="store_true")
     parser.add_argument("--eval-desc-mode", type=str, default="fixed",
                         choices=["fixed", "name_only", "name_anatomy", "name_relation", "name_anatomy_relation", "all"])
+    parser.add_argument(
+        "--prompt-variant-file",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--prompt-variant",
+        type=str,
+        default="canonical",
+        choices=PROMPT_VARIANTS,
+    )
     parser.add_argument(
         "--use-local-refiner",
         action="store_true",
