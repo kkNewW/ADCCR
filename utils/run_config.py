@@ -68,10 +68,13 @@ def build_command(config, stage_name, seed=None):
         raise KeyError(f"Unknown stage: {stage_name}")
     stage = copy.deepcopy(config["stages"][stage_name])
     runtime = config["runtime"]
+    default_seed = config.get(
+        "seed_protocol", {}
+    ).get("single_run_seed", 1)
     seed = int(
         seed
         if seed is not None
-        else stage["args"].get("seed", 42)
+        else stage["args"].get("seed", default_seed)
     )
     stage = format_placeholders(stage, seed)
     if "seed" in stage["args"]:
