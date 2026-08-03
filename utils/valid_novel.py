@@ -425,7 +425,7 @@ def main():
     parser.add_argument("--protocol", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--use-local-refiner", action="store_true")
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--seed", type=int, default=1)
     parser.add_argument(
         "--max-new-tokens",
         type=int,
