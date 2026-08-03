@@ -214,7 +214,7 @@ def main():
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--repetitions", type=int, default=100)
     parser.add_argument("--max-new-tokens", type=int, default=20)
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--seed", type=int, default=1)
     args = parser.parse_args()
 
     if not torch.cuda.is_available():
