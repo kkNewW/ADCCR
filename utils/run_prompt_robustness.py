@@ -92,7 +92,7 @@ def main():
     parser.add_argument(
         "--seed",
         type=int,
-        default=42,
+        default=1,
     )
     parser.add_argument(
         "--dry-run",
