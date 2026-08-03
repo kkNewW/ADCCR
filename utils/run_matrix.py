@@ -54,7 +54,7 @@ def main():
         default=[],
         help="Run only an exact experiment name.",
     )
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--skip-training", action="store_true")
     parser.add_argument("--skip-evaluation", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
