@@ -565,7 +565,7 @@ if __name__ == "__main__":
         "--use-local-refiner",
         action="store_true",
     )
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--seed", type=int, default=1)
     parser.add_argument(
         "--max-new-tokens",
         type=int,
