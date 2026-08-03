@@ -1,6 +1,10 @@
 {
   "schema_version": 1,
   "experiment": "adccr_coco_full",
+  "seed_protocol": {
+    "multi_run_seeds": [1, 2, 3, 4, 5],
+    "single_run_seed": 1
+  },
   "runtime": {
     "cuda_visible_devices": "0,1",
     "nproc_per_node": 2,
@@ -60,8 +64,8 @@
         "model_max_length": 2048,
         "gradient_checkpointing": false,
         "report_to": "tensorboard",
-        "seed": 42,
-        "data_seed": 42,
+        "seed": 1,
+        "data_seed": 1,
         "full_determinism": false
       }
     },
@@ -80,7 +84,7 @@
         "prompt_variant": "canonical",
         "use_local_refiner": true,
         "max_new_tokens": 20,
-        "seed": 42
+        "seed": 1
       }
     },
     "eval_humanart": {
@@ -96,7 +100,7 @@
         "eval_desc_mode": "all",
         "use_local_refiner": true,
         "max_new_tokens": 20,
-        "seed": 42
+        "seed": 1
       }
     },
     "eval_mpii": {
@@ -112,7 +116,7 @@
         "eval_desc_mode": "all",
         "use_local_refiner": true,
         "max_new_tokens": 20,
-        "seed": 42
+        "seed": 1
       }
     },
     "eval_novel": {
@@ -127,7 +131,7 @@
         "output_dir": "results/novel_keypoints",
         "use_local_refiner": true,
         "max_new_tokens": 20,
-        "seed": 42
+        "seed": 1
       }
     },
     "profile": {
@@ -142,7 +146,7 @@
         "warmup": 10,
         "repetitions": 100,
         "max_new_tokens": 20,
-        "seed": 42
+        "seed": 1
       }
     }
   }
