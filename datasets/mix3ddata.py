@@ -12,7 +12,7 @@ class ProbMergeDataset(Dataset):
             self,
             datasets = None,
             probabilities: Optional[List[float]] = None,
-            seed: Optional[int] = 42,
+            seed: Optional[int] = 1,
             stopping_strategy: Literal["first_exhausted", "all_exhausted"] = "all_exhausted",
     ):
         self.probabilities = probabilities
