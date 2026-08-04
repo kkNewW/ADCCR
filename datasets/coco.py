@@ -241,35 +241,43 @@ class COCODataset(Dataset):
             x_norm = x / self.size
             y_norm = y /self.size
             location_tokens = "[{:.3f},{:.3f}]".format(x_norm, y_norm)
+            generic_question = (
+                f"Where is the {kp_name} of this person in this image? "
+                "Please provide its coordinates."
+            )
+
             if (
-                self.use_dynamic_desc
-                and self.desc_mode == "question_templates"
+                    self.use_dynamic_desc
+                    and self.desc_mode == "question_templates"
             ):
-                desc_text = random.choice(
+                desc_text = KeypointLocationDescription[kp_name]
+                question_text = random.choice(
                     KeypointLocationQuestion[kp_name]
                 )
                 sampled_mode = "question_templates"
+
             elif self.use_dynamic_desc:
                 requested_mode = (
                     None
                     if self.desc_mode == "dynamic"
                     else self.desc_mode
                 )
-
                 desc_text, sampled_mode = (
                     self.desc_sampler.build_description(
                         kp_name,
                         mode=requested_mode,
                     )
                 )
+                question_text = generic_question
+
             else:
-                desc_text = (
-                    KeypointLocationDescription[kp_name]
-                )
+                desc_text = KeypointLocationDescription[kp_name]
+                question_text = generic_question
                 sampled_mode = "fixed"
+
             kpt_name.append(kp_name)
-            question.append(KeypointLocationQuestion[kp_name][0])
             kpt_des.append(desc_text)
+            question.append(question_text)
             caption.append(location_tokens)
             desc_mode_list.append(sampled_mode)
             target_xy_list.append([x_norm, y_norm])   # normalized coords
@@ -278,22 +286,46 @@ class COCODataset(Dataset):
             
         if not is_select:
             return use_item, {}
-        
+
         self.conv.messages = []
+
         for idx in range(5):
-            if idx >= len(kpt_des): break
-            if self.conv_format == 'keypoint':
-                q1 = "Where is the {} of this person in this image? Please provide its coordinates.".format(kpt_name[idx].replace("_", " "))
-                self.conv.append_message(self.conv.roles[0], kpt_des[idx])
-                self.conv.append_message(self.conv.roles[1], q1)
-                self.conv.append_message(self.conv.roles[2], caption[idx])
-            elif self.conv_format == 'simple':
-                q1 = "Where is the {} of this person in this image? Please provide its coordinates.".format(kpt_name[idx].replace("_", " "))
-                self.conv.append_message(self.conv.roles[0], q1)
-                self.conv.append_message(self.conv.roles[1], caption[idx])
+            if idx >= len(kpt_des):
+                break
+
+            if self.conv_format == "keypoint":
+                self.conv.append_message(
+                    self.conv.roles[0],
+                    kpt_des[idx],
+                )
+                self.conv.append_message(
+                    self.conv.roles[1],
+                    question[idx],
+                )
+                self.conv.append_message(
+                    self.conv.roles[2],
+                    caption[idx],
+                )
+
+            elif self.conv_format == "simple":
+                self.conv.append_message(
+                    self.conv.roles[0],
+                    question[idx],
+                )
+                self.conv.append_message(
+                    self.conv.roles[1],
+                    caption[idx],
+                )
+
             else:
-                self.conv.append_message(self.conv.roles[0], question[idx])
-                self.conv.append_message(self.conv.roles[1], caption[idx])
+                self.conv.append_message(
+                    self.conv.roles[0],
+                    question[idx],
+                )
+                self.conv.append_message(
+                    self.conv.roles[1],
+                    caption[idx],
+                )
 
         
         if self.conv_format == 'llama2':
