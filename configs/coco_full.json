@@ -19,7 +19,7 @@
         "llama_path": "checkpoints/model_weights/vicuna-7b-v1.5",
         "dino_path": "checkpoints/model_weights/dinov2_vitl14_pretrain.pth",
         "data_path": "data/coco/annotations/person_keypoints_train2017.json",
-        "image_folder": "data/coco/train2017",
+        "image_folder": "data/coco/images/train2017",
         "conv_format": "keypoint",
         "data_augmentation": true,
         "use_dynamic_desc": true,
@@ -75,7 +75,7 @@
       "args": {
         "model_name": "checkpoints/ckpts/coco",
         "question_file": "data/coco/annotations/person_keypoints_val2017.json",
-        "image_folder": "data/coco/val2017",
+        "image_folder": "data/coco/images/val2017",
         "output_dir": "results/main_coco",
         "conv_format": "keypoint",
         "use_dynamic_desc": true,
@@ -140,7 +140,7 @@
       "args": {
         "model_name": "checkpoints/ckpts/coco",
         "annotation_file": "data/coco/annotations/person_keypoints_val2017.json",
-        "image_folder": "data/coco/val2017",
+        "image_folder": "data/coco/images/val2017",
         "output_dir": "results/efficiency",
         "sample_index": 0,
         "warmup": 10,
