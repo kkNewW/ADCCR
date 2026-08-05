@@ -3,4 +3,4 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
-bash scripts/valid_coco.sh "$@"
+python -m utils.run_five_seeds "$@"
