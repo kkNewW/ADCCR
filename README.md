@@ -85,7 +85,5 @@ bash scripts/valid_mpii.sh
 ```bash
 # train on coco
 bash scripts/train_coco.sh
-# train on h36m and mpii
-bash scripts/train_h36m.sh
 ```
 Note that GPU memory should not be less than 24GB, training on 2 RTX 4090 GPUs
