@@ -274,9 +274,6 @@ def main():
         },
         "latency_ms": {
             "mean": statistics.fmean(measurements),
-            "standard_deviation": statistics.pstdev(
-                measurements
-            ),
             "median": statistics.median(measurements),
             "min": min(measurements),
             "max": max(measurements),

@@ -2,13 +2,9 @@ import argparse
 import copy
 import csv
 import json
-import statistics
-from collections import defaultdict
+from collections import Counter
 
 from utils.run_config import REPO_ROOT, load_config, run_stage
-
-
-EXPECTED_SEEDS = (1, 2, 3, 4, 5)
 
 
 EVALUATION_SPECS = {
@@ -16,27 +12,64 @@ EVALUATION_SPECS = {
         "stage": "eval_coco",
         "directory": "coco",
         "scale": 100.0,
-        "primary_metric": "AP",
+        "table_metrics": (
+            "AP",
+            "AP50",
+            "AP75",
+            "APM",
+            "APL",
+            "AR",
+        ),
     },
     "Human-Art": {
         "stage": "eval_humanart",
         "directory": "humanart",
         "scale": 100.0,
-        "primary_metric": "AP",
+        "table_metrics": (
+            "AP",
+            "AP50",
+            "AP75",
+            "APM",
+            "APL",
+            "AR",
+        ),
     },
     "MPII": {
         "stage": "eval_mpii",
         "directory": "mpii",
         "scale": 1.0,
-        "primary_metric": "Mean",
+        "table_metrics": (
+            "Shoulder",
+            "Elbow",
+            "Hip",
+            "Knee",
+            "Mean",
+            "Mean@0.1",
+        ),
     },
 }
 
 
-def read_numeric_metrics(metrics_path, scale):
-    """Read scalar metrics and convert them to paper units."""
+def read_numeric_metrics(
+        metrics_path,
+        scale,
+        expected_seed,
+):
+    """Read per-run metrics and verify the recorded seed."""
     with open(metrics_path, encoding="utf-8") as handle:
         metrics = json.load(handle)
+
+    recorded_seed = metrics.get(
+        "protocol",
+        {},
+    ).get("seed")
+
+    if recorded_seed != expected_seed:
+        raise RuntimeError(
+            f"Seed mismatch in {metrics_path}: "
+            f"expected {expected_seed}, "
+            f"found {recorded_seed}"
+        )
 
     return {
         name: float(value) * scale
@@ -61,70 +94,39 @@ def write_csv(path, rows, fieldnames):
         writer.writerows(rows)
 
 
-def validate_primary_runs(rows, seeds):
-    """Require the primary metric for every dataset and seed."""
-    observed = {
+def validate_table_runs(rows, seeds):
+    counts = Counter(
         (
             row["dataset"],
             row["metric"],
             row["seed"],
         )
         for row in rows
-    }
+    )
 
-    missing = []
+    problems = []
     for dataset, spec in EVALUATION_SPECS.items():
-        for seed in seeds:
-            key = (
-                dataset,
-                spec["primary_metric"],
-                seed,
-            )
-            if key not in observed:
-                missing.append(key)
+        for metric in spec["table_metrics"]:
+            for seed in seeds:
+                key = (dataset, metric, seed)
+                count = counts.get(key, 0)
 
-    if missing:
-        details = ", ".join(
-            f"{dataset}/{metric}/seed_{seed}"
-            for dataset, metric, seed in missing
-        )
+                if count == 0:
+                    problems.append(
+                        "missing: "
+                        f"{dataset}/{metric}/seed_{seed}"
+                    )
+                elif count > 1:
+                    problems.append(
+                        f"duplicated ({count}): "
+                        f"{dataset}/{metric}/seed_{seed}"
+                    )
+
+    if problems:
         raise RuntimeError(
-            "Incomplete five-seed primary results: "
-            + details
+            "Incomplete or duplicated five-seed results:\n- "
+            + "\n- ".join(problems)
         )
-
-
-def summarize(rows):
-    """Calculate the mean and sample SD for each metric."""
-    grouped = defaultdict(list)
-
-    for row in rows:
-        key = (
-            row["dataset"],
-            row["metric"],
-        )
-        grouped[key].append(row["value"])
-
-    summaries = []
-
-    for (dataset, metric), values in sorted(
-        grouped.items()
-    ):
-        summaries.append(
-            {
-                "dataset": dataset,
-                "metric": metric,
-                "runs": len(values),
-                "mean": statistics.fmean(values),
-                "sample_SD": (
-                    statistics.stdev(values)
-                    if len(values) > 1
-                    else 0.0
-                ),
-            }
-        )
-
-    return summaries
 
 
 def main():
@@ -139,7 +141,7 @@ def main():
         "--seeds",
         type=int,
         nargs="+",
-        default=list(EXPECTED_SEEDS),
+        default=None,
     )
 
     parser.add_argument(
@@ -164,15 +166,24 @@ def main():
 
     args = parser.parse_args()
 
-    if tuple(args.seeds) != EXPECTED_SEEDS:
-        raise ValueError(
-            "The matched five-seed protocol requires "
-            "exactly: 1 2 3 4 5"
-        )
-
     base = load_config(
         REPO_ROOT / args.config
     )
+
+    configured_seeds = tuple(
+        base["seed_protocol"]["five_seed_runs"]
+    )
+    seeds = tuple(
+        args.seeds
+        if args.seeds is not None
+        else configured_seeds
+    )
+
+    if seeds != configured_seeds:
+        raise ValueError(
+            "The five-seed run requires exactly: "
+            + " ".join(map(str, configured_seeds))
+        )
 
     output_root = (
         REPO_ROOT / "results/seed_stability"
@@ -180,7 +191,7 @@ def main():
 
     rows = []
 
-    for seed in args.seeds:
+    for seed in seeds:
         config = copy.deepcopy(base)
 
         config["experiment"] = (
@@ -262,6 +273,7 @@ def main():
             metrics = read_numeric_metrics(
                 metrics_path,
                 spec["scale"],
+                expected_seed=seed,
             )
 
             for metric, value in metrics.items():
@@ -277,12 +289,10 @@ def main():
     if args.dry_run:
         return
 
-    validate_primary_runs(
+    validate_table_runs(
         rows,
-        args.seeds,
+        seeds,
     )
-
-    summaries = summarize(rows)
 
     output_root.mkdir(
         parents=True,
@@ -300,26 +310,13 @@ def main():
         ],
     )
 
-    write_csv(
-        output_root / "summary.csv",
-        summaries,
-        [
-            "dataset",
-            "metric",
-            "runs",
-            "mean",
-            "sample_SD",
-        ],
-    )
-
     report = {
-        "seeds": args.seeds,
+        "seeds": list(seeds),
         "runs": rows,
-        "summaries": summaries,
     }
 
     with open(
-        output_root / "summary.json",
+        output_root / "five_seed_runs.json",
         "w",
         encoding="utf-8",
     ) as handle:
