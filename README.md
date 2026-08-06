@@ -74,8 +74,6 @@ git clone https://huggingface.co/lmsys/vicuna-7b-v1.5
 ```bash
 # evaluate on coco val set
 bash scripts/valid_coco.sh
-# evaluate on h36m set
-bash scripts/valid_h36m.sh
 # evaluate on humanart set
 bash scripts/valid_humanart.sh
 # evaluate on mpii set
