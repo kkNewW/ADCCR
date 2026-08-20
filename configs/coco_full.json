@@ -103,6 +103,55 @@
         "seed": "{seed}"
       }
     },
+    "eval_refinement_always_on": {
+      "entrypoint": "utils/valid2d.py",
+      "launcher": "torchrun",
+      "args": {
+        "model_name": "checkpoints/ckpts/coco",
+        "question_file": "data/coco/annotations/person_keypoints_val2017.json",
+        "image_folder": "data/coco/images/val2017",
+        "output_dir": "results/refinement_reliability/always_on",
+        "conv_format": "keypoint",
+        "use_dynamic_desc": true,
+        "eval_desc_mode": "all",
+        "prompt_variant_file": null,
+        "prompt_variant": "canonical",
+        "use_local_refiner": true,
+        "max_new_tokens": 20,
+        "seed": "{seed}"
+      }
+    },
+    "eval_refinement_confidence_gated": {
+      "entrypoint": "utils/valid2d.py",
+      "launcher": "torchrun",
+      "args": {
+        "model_name": "checkpoints/ckpts/coco",
+        "question_file": "data/coco/annotations/person_keypoints_val2017.json",
+        "image_folder": "data/coco/images/val2017",
+        "output_dir": "results/refinement_reliability/confidence_gated",
+        "conv_format": "keypoint",
+        "use_dynamic_desc": true,
+        "eval_desc_mode": "all",
+        "prompt_variant_file": null,
+        "prompt_variant": "canonical",
+        "use_local_refiner": true,
+        "use_refinement_confidence_gate": true,
+        "refinement_confidence_threshold": 0.5,
+        "max_new_tokens": 20,
+        "seed": "{seed}"
+      }
+    },
+    "analyze_refinement_reliability": {
+      "entrypoint": "utils/analyze_refinement_reliability.py",
+      "launcher": "python",
+      "args": {
+        "always_on_predictions": "results/refinement_reliability/always_on/predictions_detailed.json",
+        "gated_predictions": "results/refinement_reliability/confidence_gated/predictions_detailed.json",
+        "output_dir": "results/refinement_reliability/analysis",
+        "confidence_threshold": 0.5,
+        "tolerance_px": 0.5
+      }
+    },
     "eval_mpii": {
       "entrypoint": "utils/valid2dmpii.py",
       "launcher": "torchrun",
