@@ -32,6 +32,11 @@ from utils.inference import (
     parse_normalized_coordinates,
 )
 from utils.reproducibility import set_global_seed
+from utils.refinement_policy import (
+    merge_refined_coordinates,
+    select_refinement_indices,
+    validate_refinement_policy,
+)
 from dataclasses import dataclass
 
 def disable_torch_init():
@@ -480,6 +485,7 @@ def worker(model, tokenizer, dataset, args, output_dir):
             decoded_kpt[i, 2] = (x_s + y_s) / 2.0
 
         coarse_xy_224 = decoded_kpt[:, :2].copy()
+        refinement_indices = np.empty(0, dtype=np.int64)
 
         if args.use_local_refiner:
             if not getattr(
@@ -493,80 +499,88 @@ def worker(model, tokenizer, dataset, args, output_dir):
                     "not contain one."
                 )
 
-            refine_indices = [
+            candidate_indices = [
                 index
                 for index, result in enumerate(result_dicts)
                 if result["kpt_name"]
                 in MPII_REFINER_KEYPOINTS
             ]
 
-            if len(refine_indices) != 12:
+            if len(candidate_indices) != 12:
                 raise RuntimeError(
                     "Expected 12 overlapping COCO/MPII "
                     "keypoints for local refinement, got "
-                    f"{len(refine_indices)}."
+                    f"{len(candidate_indices)}."
                 )
+
+            refinement_indices = select_refinement_indices(
+                sequence_confidence,
+                use_confidence_gate=(
+                    args.use_refinement_confidence_gate
+                ),
+                confidence_threshold=(
+                    args.refinement_confidence_threshold
+                ),
+                candidate_indices=candidate_indices,
+            )
 
             descriptions = [
                 result_dicts[index]["description"]
-                for index in refine_indices
+                for index in refinement_indices
             ]
-            description_tokens = tokenizer(
-                descriptions,
-                padding=True,
-                truncation=True,
-                max_length=96,
-                return_tensors="pt",
-            )
-            description_ids = (
-                description_tokens.input_ids.cuda()
-            )
-            description_mask = (
-                description_tokens.attention_mask.cuda()
-            )
+            if refinement_indices.size:
+                description_tokens = tokenizer(
+                    descriptions,
+                    padding=True,
+                    truncation=True,
+                    max_length=96,
+                    return_tensors="pt",
+                )
+                index_tensor = torch.as_tensor(
+                    refinement_indices,
+                    dtype=torch.long,
+                    device=batch_images.device,
+                )
+                crop_sizes = torch.as_tensor(
+                    [
+                        CROP_SIZE_MAP[
+                            result_dicts[index]["kpt_name"]
+                        ]
+                        for index in refinement_indices
+                    ],
+                    dtype=torch.float32,
+                    device=batch_images.device,
+                )
+                crop_sizes *= getattr(
+                    model.config,
+                    "refiner_crop_scale",
+                    1.0,
+                )
 
-            refine_index_tensor = torch.tensor(
-                refine_indices,
-                dtype=torch.long,
-                device=batch_images.device,
-            )
-            refine_images = batch_images.index_select(
-                0,
-                refine_index_tensor,
-            )
-            coarse_xy = torch.tensor(
-                coarse_xy_224[refine_indices],
-                dtype=torch.float32,
-                device=batch_images.device,
-            )
-            crop_sizes = torch.tensor(
-                [
-                    CROP_SIZE_MAP[
-                        result_dicts[index]["kpt_name"]
-                    ]
-                    for index in refine_indices
-                ],
-                dtype=torch.float32,
-                device=batch_images.device,
-            )
-            crop_sizes *= getattr(
-                model.config,
-                "refiner_crop_scale",
-                1.0,
-            )
+                refined_xy, _ = model.refine_coordinates(
+                    images=batch_images.index_select(
+                        0,
+                        index_tensor,
+                    ),
+                    coarse_xy=torch.as_tensor(
+                        coarse_xy_224[refinement_indices],
+                        dtype=torch.float32,
+                        device=batch_images.device,
+                    ),
+                    crop_sizes=crop_sizes,
+                    desc_input_ids=(
+                        description_tokens.input_ids.cuda()
+                    ),
+                    desc_attention_mask=(
+                        description_tokens.attention_mask.cuda()
+                    ),
+                )
 
-            refined_xy, _ = model.refine_coordinates(
-                images=refine_images,
-                coarse_xy=coarse_xy,
-                crop_sizes=crop_sizes,
-                desc_input_ids=description_ids,
-                desc_attention_mask=description_mask,
-            )
-
-            decoded_kpt[
-                refine_indices,
-                :2,
-            ] = refined_xy.float().cpu().numpy()
+                decoded_kpt[:, :2] = merge_refined_coordinates(
+                    coarse_xy_224,
+                    refined_xy.float().cpu().numpy(),
+                    refinement_indices,
+                )
 
         decoded_kpt[:, :2] = transform_preds(
             decoded_kpt[:, :2], c, s, (crop_size, crop_size)
@@ -576,6 +590,12 @@ def worker(model, tokenizer, dataset, args, output_dir):
         data['ins_id'] = ins_id
         data['score'] = float(np.mean(decoded_kpt[:, 2]))
         data['keypoints'] = decoded_kpt.reshape(-1).tolist()
+        refinement_applied = np.zeros(16, dtype=bool)
+        refinement_applied[refinement_indices] = True
+        data["coarse_confidence"] = sequence_confidence.tolist()
+        data["refinement_applied"] = (
+            refinement_applied.tolist()
+        )
         
         all_preds.append(data)
     
@@ -628,6 +648,12 @@ def worker(model, tokenizer, dataset, args, output_dir):
             "person_instances": "MPII center/scale",
             "description_mode": args.eval_desc_mode,
             "local_refiner": args.use_local_refiner,
+            "refinement_confidence_gate": (
+                args.use_refinement_confidence_gate
+            ),
+            "refinement_confidence_threshold": (
+                args.refinement_confidence_threshold
+            ),
             "seed": args.seed,
         }
         with open(
@@ -641,6 +667,11 @@ def worker(model, tokenizer, dataset, args, output_dir):
         return False
 
 def eval_model(args):
+    validate_refinement_policy(
+        args.use_local_refiner,
+        args.use_refinement_confidence_gate,
+        args.refinement_confidence_threshold,
+    )
     torch.distributed.init_process_group(backend='nccl')
     rank = int(os.environ["LOCAL_RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
@@ -695,6 +726,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--use-local-refiner",
         action="store_true",
+    )
+    parser.add_argument(
+        "--use-refinement-confidence-gate",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--refinement-confidence-threshold",
+        type=float,
+        default=0.5,
     )
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument(
