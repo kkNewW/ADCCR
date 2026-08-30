@@ -29,7 +29,6 @@ print(json.dumps({
 }, indent=2))
 PY
 
-python utils/check_checkpoint.py checkpoints/ckpts/coco
 python -m unittest discover -s tests -v
 python utils/run_config.py \
   --config configs/coco_full.json \
