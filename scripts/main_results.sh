@@ -3,4 +3,4 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
-python -m utils.run_five_seeds "$@"
+python scripts/run_five_seed_all.py "$@"
