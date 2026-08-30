@@ -7,22 +7,35 @@ confidence is at least `0.5`; otherwise, its coarse coordinate is retained.
 The normalized coarse error is used only for post-hoc stratification and is
 never available to the inference-time gate.
 
-Run the two policies and produce the reliability summary with:
+Run the always-on validation stage, which now writes raw JSONL directly, and
+then produce both policy summaries from the same refinement candidates:
 
 ```bash
-bash scripts/refinement_reliability.sh
+python utils/run_config.py --config configs/coco_full.json \
+  --stage eval_refinement_always_on
+python utils/run_config.py --config configs/coco_full.json \
+  --stage analyze_refinement_reliability
 ```
 
-The command writes independent always-on and confidence-gated predictions,
-then matches them by COCO annotation identifier. Only annotated keypoints are
-included. For each keypoint, it records coarse, final, and ground-truth
-coordinates in the resized `224 x 224` person-instance coordinate system.
+The validation command writes
+`results/refinement_reliability/raw_refinement_predictions.jsonl` with one row
+per visible keypoint. Each row stores the keypoint-specific description, crop
+size, coarse coordinate, always-on refinement candidate, ground truth, and
+generated-token confidence in the resized `224 x 224` person-instance system.
+The analyzer applies the fixed gate offline to those same candidates, so the
+always-on and gated policies are paired exactly rather than matched between
+two independently generated files.
 
 The analysis uses
 
 ```text
 q = L-infinity(coarse - ground_truth) / category-aware crop size
 ```
+
+The infinity norm is used only for stratification. Euclidean pixel errors are
+still used for the mean-error and outcome columns. The four reporting strata
+are the same as Table 16: `0 <= q <= 0.10`,
+`0.10 < q <= 0.25`, `0.25 < q <= 0.50`, and `q > 0.50`.
 
 and assigns outcomes from the Euclidean error change with a `0.5 px`
 tolerance:
