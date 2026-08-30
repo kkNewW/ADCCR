@@ -47,15 +47,18 @@
     },
     {
       "name": "full_model",
-      "result_groups": ["module_ablation", "difficult_joints", "description_ablation", "sampling_ablation", "refiner_sensitivity"],
+      "result_groups": ["module_ablation", "difficult_joints", "refiner_sensitivity"],
       "overrides": {}
     },
     {
       "name": "description_name_only",
       "result_groups": ["description_ablation"],
       "overrides": {
+        "stages.train.args.use_dynamic_desc": true,
         "stages.train.args.desc_mode": "name_only",
+        "stages.train.args.desc_sampling_strategy": "default",
         "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.use_dynamic_desc": true,
         "stages.eval_coco.args.eval_desc_mode": "name_only",
         "stages.eval_coco.args.use_local_refiner": false
       }
@@ -64,8 +67,11 @@
       "name": "description_name_anatomy",
       "result_groups": ["description_ablation"],
       "overrides": {
+        "stages.train.args.use_dynamic_desc": true,
         "stages.train.args.desc_mode": "name_anatomy",
+        "stages.train.args.desc_sampling_strategy": "default",
         "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.use_dynamic_desc": true,
         "stages.eval_coco.args.eval_desc_mode": "name_anatomy",
         "stages.eval_coco.args.use_local_refiner": false
       }
@@ -74,8 +80,11 @@
       "name": "description_name_relation",
       "result_groups": ["description_ablation"],
       "overrides": {
+        "stages.train.args.use_dynamic_desc": true,
         "stages.train.args.desc_mode": "name_relation",
+        "stages.train.args.desc_sampling_strategy": "default",
         "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.use_dynamic_desc": true,
         "stages.eval_coco.args.eval_desc_mode": "name_relation",
         "stages.eval_coco.args.use_local_refiner": false
       }
@@ -84,18 +93,50 @@
       "name": "description_name_anatomy_relation",
       "result_groups": ["description_ablation"],
       "overrides": {
+        "stages.train.args.use_dynamic_desc": true,
         "stages.train.args.desc_mode": "name_anatomy_relation",
+        "stages.train.args.desc_sampling_strategy": "default",
         "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.use_dynamic_desc": true,
         "stages.eval_coco.args.eval_desc_mode": "name_anatomy_relation",
         "stages.eval_coco.args.use_local_refiner": false
       }
     },
     {
       "name": "description_all_fields",
-      "result_groups": ["description_ablation", "sampling_ablation"],
+      "result_groups": ["description_ablation"],
       "overrides": {
+        "stages.train.args.use_dynamic_desc": true,
         "stages.train.args.desc_mode": "all",
+        "stages.train.args.desc_sampling_strategy": "default",
         "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.use_dynamic_desc": true,
+        "stages.eval_coco.args.eval_desc_mode": "all",
+        "stages.eval_coco.args.use_local_refiner": false
+      }
+    },
+    {
+      "name": "sampling_fixed_name",
+      "result_groups": ["sampling_ablation"],
+      "overrides": {
+        "stages.train.args.use_dynamic_desc": true,
+        "stages.train.args.desc_mode": "name_only",
+        "stages.train.args.desc_sampling_strategy": "default",
+        "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.use_dynamic_desc": true,
+        "stages.eval_coco.args.eval_desc_mode": "name_only",
+        "stages.eval_coco.args.use_local_refiner": false
+      }
+    },
+    {
+      "name": "sampling_fixed_all",
+      "result_groups": ["sampling_ablation"],
+      "overrides": {
+        "stages.train.args.use_dynamic_desc": true,
+        "stages.train.args.desc_mode": "all",
+        "stages.train.args.desc_sampling_strategy": "default",
+        "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.use_dynamic_desc": true,
         "stages.eval_coco.args.eval_desc_mode": "all",
         "stages.eval_coco.args.use_local_refiner": false
       }
@@ -104,16 +145,39 @@
       "name": "sampling_uniform",
       "result_groups": ["sampling_ablation"],
       "overrides": {
+        "stages.train.args.use_dynamic_desc": true,
         "stages.train.args.desc_mode": "dynamic",
-        "stages.train.args.desc_sampling_strategy": "uniform"
+        "stages.train.args.desc_sampling_strategy": "uniform",
+        "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.use_dynamic_desc": true,
+        "stages.eval_coco.args.eval_desc_mode": "all",
+        "stages.eval_coco.args.use_local_refiner": false
+      }
+    },
+    {
+      "name": "sampling_default",
+      "result_groups": ["sampling_ablation"],
+      "overrides": {
+        "stages.train.args.use_dynamic_desc": true,
+        "stages.train.args.desc_mode": "dynamic",
+        "stages.train.args.desc_sampling_strategy": "default",
+        "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.use_dynamic_desc": true,
+        "stages.eval_coco.args.eval_desc_mode": "all",
+        "stages.eval_coco.args.use_local_refiner": false
       }
     },
     {
       "name": "sampling_question_templates",
       "result_groups": ["sampling_ablation"],
       "overrides": {
+        "stages.train.args.use_dynamic_desc": true,
         "stages.train.args.desc_mode": "question_templates",
-        "stages.eval_coco.args.eval_desc_mode": "all"
+        "stages.train.args.desc_sampling_strategy": "default",
+        "stages.train.args.use_local_refiner": false,
+        "stages.eval_coco.args.use_dynamic_desc": true,
+        "stages.eval_coco.args.eval_desc_mode": "all",
+        "stages.eval_coco.args.use_local_refiner": false
       }
     },
     {

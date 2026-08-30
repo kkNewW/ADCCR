@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "scope": "Commands, scripts, and configurations required to regenerate the manuscript tables; generated outputs are not bundled.",
+  "environment": {
+    "python": "3.10.13",
+    "pytorch": "2.0.1",
+    "cuda": "11.7",
+    "transformers": "4.31.0",
+    "gpu": "NVIDIA RTX 4090 24GB",
+    "person_input": "ground_truth_box",
+    "resize": [224, 224],
+    "flip_test": false
+  },
+  "seeds": [1, 2, 3, 4, 5],
+  "methods": [
+    {"name": "LocLLM", "adapter": "external/LocLLM"},
+    {"name": "PoseLLM", "adapter": "external/PoseLLM"},
+    {"name": "ADCCR", "adapter": "native"}
+  ],
+  "evaluation_datasets": ["coco", "human_art", "mpii"],
+  "statistical_convention": {
+    "descriptive_standard_deviation": "population_ddof_0",
+    "paired_ci_standard_deviation": "sample_ddof_1",
+    "paired_test": "exact_two_sided_sign_flip",
+    "multiplicity_adjustment": "none"
+  },
+  "weights": {
+    "download_command": "python scripts/download_weights.py --execute"
+  },
+  "setup_commands": [
+    "python scripts/fetch_baseline_code.py --execute",
+    "bash scripts/check_setup.sh"
+  ],
+  "entrypoints": {
+    "all_tables": "python scripts/reproduce_all.py --execute",
+    "static_tables_1_4": "python scripts/reproduce_static_tables.py",
+    "main_cross_dataset_and_five_seed_tables_5_7_14": "python scripts/run_five_seed_all.py --execute",
+    "efficiency_table_6": "python scripts/profile_efficiency_all.py --execute",
+    "novel_keypoints_table_8": "python utils/run_config.py --config configs/coco_full.json --stage eval_novel",
+    "ablations_tables_9_13": "python utils/run_matrix.py",
+    "matched_ablations_tables_11_12": "python scripts/run_matched_ablations.py --execute",
+    "prompt_robustness_table_15": "python -m utils.run_prompt_robustness",
+    "error_propagation_table_16": "bash scripts/refinement_reliability.sh"
+  },
+  "reproduction_steps": [
+    {"id": "tables_1_4", "command": "python scripts/reproduce_static_tables.py"},
+    {"id": "tables_5_7_14", "command": "python scripts/run_five_seed_all.py --execute"},
+    {"id": "table_6", "command": "python scripts/profile_efficiency_all.py --execute"},
+    {"id": "table_8", "command": "python utils/run_config.py --config configs/coco_full.json --stage eval_novel"},
+    {"id": "tables_9_13", "command": "python utils/run_matrix.py"},
+    {"id": "table_15", "command": "python -m utils.run_prompt_robustness"},
+    {"id": "table_16", "command": "bash scripts/refinement_reliability.sh"}
+  ],
+  "tables": {
+    "1": {"command": "python scripts/reproduce_static_tables.py", "scripts": ["scripts/reproduce_static_tables.py", "utils/validate_descriptions.py"], "configs": ["configs/coco_full.json"]},
+    "2": {"command": "python scripts/reproduce_static_tables.py", "scripts": ["scripts/reproduce_static_tables.py", "datasets/desc_bank.py"], "configs": ["configs/coco_full.json"]},
+    "3": {"command": "python scripts/reproduce_static_tables.py", "scripts": ["scripts/reproduce_static_tables.py"], "configs": ["configs/coco_full.json"]},
+    "4": {"command": "python scripts/reproduce_static_tables.py", "scripts": ["scripts/reproduce_static_tables.py"], "configs": ["configs/coco_full.json"]},
+    "5": {"command": "python scripts/run_five_seed_all.py --execute", "scripts": ["scripts/run_five_seed_all.py", "tools/method_adapter.py", "tools/metric_normalizer.py"], "configs": ["configs/reproduction_manifest.json", "configs/method_adapters.json", "configs/coco_full.json"]},
+    "6": {"command": "python scripts/profile_efficiency_all.py --execute", "scripts": ["scripts/profile_efficiency_all.py", "tools/profile_adapter.py", "tools/profile_external_llm.py", "tools/profile_vitpose.py", "utils/profile_efficiency.py"], "configs": ["configs/efficiency.json", "configs/method_adapters.json"]},
+    "7": {"command": "python scripts/run_five_seed_all.py --execute", "scripts": ["scripts/run_five_seed_all.py", "tools/method_adapter.py", "tools/metric_normalizer.py"], "configs": ["configs/reproduction_manifest.json", "configs/method_adapters.json", "configs/coco_full.json"]},
+    "8": {"command": "python utils/run_config.py --config configs/coco_full.json --stage eval_novel", "scripts": ["utils/run_config.py", "utils/valid_novel.py"], "configs": ["configs/coco_full.json", "configs/novel_keypoints_mpii.json"]},
+    "9": {"command": "python utils/run_matrix.py", "scripts": ["utils/run_matrix.py", "utils/run_config.py"], "configs": ["configs/ablation_matrix.json", "configs/coco_full.json"]},
+    "10": {"command": "python utils/run_matrix.py", "scripts": ["utils/run_matrix.py", "utils/run_config.py", "utils/metrics.py"], "configs": ["configs/ablation_matrix.json", "configs/coco_full.json"]},
+    "11": {"command": "python scripts/run_matched_ablations.py --execute", "scripts": ["scripts/run_matched_ablations.py", "utils/run_config.py"], "configs": ["configs/ablation_matrix.json", "configs/coco_full.json"]},
+    "12": {"command": "python scripts/run_matched_ablations.py --execute", "scripts": ["scripts/run_matched_ablations.py", "utils/run_config.py"], "configs": ["configs/ablation_matrix.json", "configs/coco_full.json"]},
+    "13": {"command": "python utils/run_matrix.py", "scripts": ["utils/run_matrix.py", "utils/run_config.py"], "configs": ["configs/ablation_matrix.json", "configs/coco_full.json"]},
+    "14": {"command": "python scripts/run_five_seed_all.py --execute", "scripts": ["scripts/run_five_seed_all.py", "tools/method_adapter.py", "tools/metric_normalizer.py", "scripts/paired_seed_stats.py"], "configs": ["configs/reproduction_manifest.json", "configs/method_adapters.json", "configs/coco_full.json"]},
+    "15": {"command": "python -m utils.run_prompt_robustness", "scripts": ["utils/run_prompt_robustness.py", "utils/prompt_variants.py", "utils/run_config.py"], "configs": ["configs/prompt_variants.json", "configs/coco_full.json"]},
+    "16": {"command": "bash scripts/refinement_reliability.sh", "scripts": ["scripts/refinement_reliability.sh", "scripts/run_error_propagation.py", "utils/valid2d.py", "utils/refinement_policy.py", "utils/refinement_trace.py", "utils/analyze_refinement_reliability.py"], "configs": ["configs/coco_full.json"]}
+  }
+}

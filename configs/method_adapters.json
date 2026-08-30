@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "project_config": "configs/coco_full.json",
+  "methods": {
+    "ADCCR": {
+      "backend": "native",
+      "checkpoint": "checkpoints/ckpts/coco",
+      "weights": {
+        "repository": "https://huggingface.co/kk618/ADCCR",
+        "repo_id": "kk618/ADCCR"
+      }
+    },
+    "LocLLM": {
+      "backend": "external_llm",
+      "repo_dir": "external/LocLLM",
+      "repository": "https://github.com/kennethwdk/LocLLM.git",
+      "revision": "b33cb2f43ea7ed43606afb27dd04b0e44ceacae5",
+      "checkpoint_repository": "https://huggingface.co/d0ntcare/LocLLM",
+      "checkpoint": "checkpoints/ckpts/coco",
+      "model_class": "LocLLMModel",
+      "gpus": "0,1,2,3",
+      "nproc_per_node": 4,
+      "eval_nproc_per_node": {
+        "coco": 4,
+        "human_art": 4,
+        "mpii": 2
+      },
+      "master_port": 25003,
+      "train_args": {
+        "model_name_or_path": "checkpoints/model_weights/vicuna-7b-v1.5",
+        "llama_path": "checkpoints/model_weights/vicuna-7b-v1.5",
+        "dino_path": "checkpoints/model_weights/dinov2_vitl14_pretrain.pth",
+        "data_path": "data/coco/annotations/person_keypoints_train2017.json",
+        "image_folder": "data/coco/images/train2017",
+        "conv_format": "keypoint",
+        "data_augmentation": true,
+        "tune_mm_mlp_adapter": true,
+        "freeze_llm": false,
+        "lora_llm_enable": true,
+        "freeze_vit": false,
+        "lora_vision_enable": true,
+        "bf16": true,
+        "num_train_epochs": 12,
+        "per_device_train_batch_size": 1,
+        "per_device_eval_batch_size": 1,
+        "gradient_accumulation_steps": 16,
+        "evaluation_strategy": "no",
+        "save_strategy": "steps",
+        "save_steps": 500000,
+        "save_total_limit": 1,
+        "learning_rate": 0.0005,
+        "weight_decay": 0.05,
+        "warmup_ratio": 0.03,
+        "lr_scheduler_type": "cosine",
+        "logging_steps": 1,
+        "dataloader_num_workers": 4,
+        "tf32": true,
+        "model_max_length": 2048,
+        "gradient_checkpointing": false,
+        "report_to": "tensorboard"
+      }
+    },
+    "PoseLLM": {
+      "backend": "external_llm",
+      "repo_dir": "external/PoseLLM",
+      "repository": "https://github.com/Ody-trek/PoseLLM.git",
+      "revision": "65c6b72d046124cc4afa74a8e6596b9c94633c20",
+      "checkpoint_repository": "https://huggingface.co/KTrek/PoseLLM",
+      "checkpoint": "checkpoints/ckpts/coco",
+      "model_class": "PoseLLMModel",
+      "gpus": "0,1",
+      "nproc_per_node": 2,
+      "eval_nproc_per_node": {
+        "coco": 2,
+        "human_art": 2,
+        "mpii": 2
+      },
+      "master_port": 25003,
+      "train_args": {
+        "model_name_or_path": "checkpoints/model_weights/vicuna-7b-v1.5",
+        "llama_path": "checkpoints/model_weights/vicuna-7b-v1.5",
+        "dino_path": "checkpoints/model_weights/dinov2_vitl14_pretrain.pth",
+        "data_path": "data/coco/annotations/person_keypoints_train2017.json",
+        "image_folder": "data/coco/images/train2017",
+        "conv_format": "keypoint",
+        "data_augmentation": true,
+        "tune_mm_mlp_adapter": true,
+        "freeze_llm": false,
+        "lora_llm_enable": true,
+        "freeze_vit": false,
+        "lora_vision_enable": true,
+        "bf16": true,
+        "num_train_epochs": 12,
+        "per_device_train_batch_size": 1,
+        "per_device_eval_batch_size": 1,
+        "gradient_accumulation_steps": 16,
+        "evaluation_strategy": "no",
+        "save_strategy": "epoch",
+        "save_total_limit": 12,
+        "learning_rate": 0.0005,
+        "weight_decay": 0.05,
+        "warmup_ratio": 0.03,
+        "lr_scheduler_type": "cosine",
+        "logging_steps": 1,
+        "dataloader_num_workers": 4,
+        "tf32": true,
+        "model_max_length": 2048,
+        "gradient_checkpointing": false,
+        "report_to": "tensorboard"
+      }
+    },
+    "ViTPose-L": {
+      "backend": "vitpose",
+      "repo_dir": "external/ViTPose",
+      "repository": "https://github.com/ViTAE-Transformer/ViTPose.git",
+      "revision": "c050ed29112da7704797cc1a65af0234b525010d",
+      "config_file": "configs/body/2d_kpt_sview_rgb_img/topdown_heatmap/coco/ViTPose_large_coco_256x192.py",
+      "checkpoint": "checkpoints/baselines/vitpose-l.pth",
+      "gpus": "0"
+    }
+  },
+  "datasets": {
+    "coco": {
+      "stage": "eval_coco",
+      "entrypoint": "utils/valid2d.py",
+      "annotation": "data/coco/annotations/person_keypoints_val2017.json",
+      "image_folder": "data/coco/images/val2017",
+      "metric": "AP"
+    },
+    "human_art": {
+      "stage": "eval_humanart",
+      "entrypoint": "utils/valid2d.py",
+      "annotation": "data/HumanArt/annotations/validation_humanart.json",
+      "image_folder": "data",
+      "metric": "AP"
+    },
+    "mpii": {
+      "stage": "eval_mpii",
+      "entrypoint": "utils/valid2dmpii.py",
+      "annotation": "data/mpii/annot/valid.json",
+      "image_folder": "data/mpii",
+      "ground_truth": "data/mpii/annot/gt_valid.mat",
+      "metric": "PCKh@0.5"
+    }
+  }
+}

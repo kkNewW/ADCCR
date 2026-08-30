@@ -1,0 +1,40 @@
+{
+  "protocol": {
+    "batch_persons": 1,
+    "joint_predictions_per_person": 17,
+    "language_queries_per_person": {
+      "ViTPose-L": 0,
+      "LocLLM": 17,
+      "PoseLLM": 17,
+      "ADCCR": 17
+    },
+    "warmup": 10,
+    "repeat": 100,
+    "synchronize_cuda": true,
+    "timed_scope": "model inference from a prepared person crop through coordinate decoding",
+    "include_preprocessing": false,
+    "include_visual_encoding": true,
+    "include_generation_when_applicable": true,
+    "include_coordinate_decoding": true,
+    "include_local_refinement_when_applicable": true,
+    "flops_tool": "torch.profiler(with_flops=True)"
+  },
+  "methods": [
+    {
+      "name": "ViTPose-L",
+      "profile_command": "python tools/profile_adapter.py --method ViTPose-L --adapters configs/method_adapters.json --protocol configs/efficiency.json --profile-json {json}"
+    },
+    {
+      "name": "LocLLM",
+      "profile_command": "python tools/profile_adapter.py --method LocLLM --adapters configs/method_adapters.json --protocol configs/efficiency.json --profile-json {json}"
+    },
+    {
+      "name": "PoseLLM",
+      "profile_command": "python tools/profile_adapter.py --method PoseLLM --adapters configs/method_adapters.json --protocol configs/efficiency.json --profile-json {json}"
+    },
+    {
+      "name": "ADCCR",
+      "profile_command": "python tools/profile_adapter.py --method ADCCR --adapters configs/method_adapters.json --protocol configs/efficiency.json --profile-json {json}"
+    }
+  ]
+}

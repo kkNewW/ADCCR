@@ -10,6 +10,72 @@
     "nproc_per_node": 2,
     "master_port": 25003
   },
+  "input": {
+    "person_size": [224, 224],
+    "person_box": "ground_truth",
+    "flip_test": false,
+    "queries_per_person": 17
+  },
+  "description": {
+    "fields": ["name", "anatomy", "relation", "visual"],
+    "manual_bank": "datasets/constants.py::DESCRIPTION_BANK",
+    "sampler_implementation": "datasets/desc_bank.py::DescriptionSampler",
+    "train_mode": "dynamic",
+    "train_sampler": "default",
+    "train_sampler_probabilities": {
+      "name_only": 0.15,
+      "name_anatomy": 0.25,
+      "name_relation": 0.25,
+      "name_anatomy_relation": 0.20,
+      "all": 0.15
+    },
+    "inference_mode": "all",
+    "manual_scope": ["semantic_field_content"],
+    "automatic_scope": ["field_composition", "mode_sampling"],
+    "independent_keypoint_queries": true,
+    "global_skeleton_constraint": false
+  },
+  "refiner": {
+    "enabled": true,
+    "crop_size_source": "datasets/constants.py::CROP_SIZE_MAP",
+    "crop_sizes": {
+      "facial_center": 64,
+      "facial_side": 72,
+      "limb_endpoint": 96,
+      "middle_limb_joint": 112,
+      "torso_side_joint": 128
+    },
+    "crop_resize": [128, 128],
+    "heatmap_size": [64, 64],
+    "sigma": 2.0,
+    "text_conditioned": true,
+    "loss_weight": 0.5,
+    "train_center_perturbation": [-0.25, 0.25],
+    "confidence_gate": {
+      "available": true,
+      "enabled_by_default": false,
+      "enabled_stage": "eval_refinement_confidence_gated",
+      "confidence_source": "generated_coordinate_token_geometric_mean",
+      "sequence_threshold": 0.5,
+      "heatmap_threshold": null,
+      "max_displacement": null,
+      "fallback": "coarse_coordinate"
+    }
+  },
+  "evaluation": {
+    "save_detailed_predictions": true,
+    "detailed_prediction_filename": "predictions_detailed.json",
+    "raw_refinement_export_stage": "eval_refinement_always_on",
+    "raw_record_path": "results/refinement_reliability/raw_refinement_predictions.jsonl",
+    "outcome_tolerance_px": 0.5,
+    "seed_list": [1, 2, 3, 4, 5],
+    "paired_statistics": {
+      "entrypoint": "scripts/paired_seed_stats.py",
+      "confidence_interval": "two_sided_paired_t_95",
+      "test": "exact_two_sided_sign_flip",
+      "multiplicity_adjustment": "none"
+    }
+  },
   "stages": {
     "train": {
       "entrypoint": "utils/train2d.py",
@@ -117,6 +183,8 @@
         "prompt_variant_file": null,
         "prompt_variant": "canonical",
         "use_local_refiner": true,
+        "save_raw_refinement_records": true,
+        "raw_refinement_records_file": "results/refinement_reliability/raw_refinement_predictions.jsonl",
         "max_new_tokens": 20,
         "seed": "{seed}"
       }
@@ -145,11 +213,21 @@
       "entrypoint": "utils/analyze_refinement_reliability.py",
       "launcher": "python",
       "args": {
-        "always_on_predictions": "results/refinement_reliability/always_on/predictions_detailed.json",
-        "gated_predictions": "results/refinement_reliability/confidence_gated/predictions_detailed.json",
-        "output_dir": "results/refinement_reliability/analysis",
-        "confidence_threshold": 0.5,
-        "tolerance_px": 0.5
+        "input": "results/refinement_reliability/raw_refinement_predictions.jsonl",
+        "out_json": "results/refinement_reliability/analysis/reliability_records.json",
+        "out_csv": "results/refinement_reliability/analysis/reliability_summary.csv",
+        "threshold": 0.5,
+        "tolerance": 0.5
+      }
+    },
+    "paired_seed_statistics": {
+      "entrypoint": "scripts/paired_seed_stats.py",
+      "launcher": "python",
+      "args": {
+        "input": "results/five_seed/seed_metrics.csv",
+        "out_summary": "results/five_seed/seed_summary.json",
+        "out_pairs": "results/five_seed/paired_comparisons.json",
+        "reference": "ADCCR"
       }
     },
     "eval_mpii": {
