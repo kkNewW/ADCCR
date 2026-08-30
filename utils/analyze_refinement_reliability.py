@@ -1,430 +1,209 @@
-"""Summarize coarse-to-refined keypoint error propagation."""
+"""Reproduce the always-on and confidence-gated refinement analysis.
+
+Input is JSONL with one record per annotated keypoint.  Required fields:
+
+    {"dataset": "COCO", "image_id": ..., "person_id": ..., "keypoint": "left_wrist",
+     "crop_size": 96, "gt": [x, y], "coarse": [x, y],
+     "refined": [x, y], "sequence_confidence": 0.73}
+
+Coordinates are in the resized 224x224 person-instance system.  The utility
+also accepts ``heatmap_confidence`` when an additional check is enabled.
+"""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import json
+import math
+from collections import Counter, defaultdict
 from pathlib import Path
+from typing import Dict, Iterable, List, Mapping, MutableMapping, Sequence, Tuple
 
-import numpy as np
+from refinement_policy import RefinementPolicy, classify_outcome
 
 
-BIN_DEFINITIONS = (
-    ("0-0.10", 0.0, 0.10, True),
-    ("0.10-0.25", 0.10, 0.25, True),
-    ("0.25-0.50", 0.25, 0.50, True),
-    (">0.50", 0.50, np.inf, False),
+Coordinate = Tuple[float, float]
+BINS: Sequence[Tuple[str, float, float]] = (
+    ("0-0.10", 0.0, 0.10),
+    ("0.10-0.25", 0.10, 0.25),
+    ("0.25-0.50", 0.25, 0.50),
+    (">0.50", 0.50, float("inf")),
 )
 
 
-def load_records(path: Path):
-    with path.open(encoding="utf-8") as handle:
-        records = json.load(handle)
-    if not isinstance(records, list):
-        raise ValueError(f"Expected a JSON list in {path}.")
-    return records
+def _point(value: Sequence[float]) -> Coordinate:
+    if len(value) != 2:
+        raise ValueError(f"coordinate must have two values, got {value!r}")
+    return float(value[0]), float(value[1])
 
 
-def index_records(records, label):
-    indexed = {}
-    for record in records:
-        annotation_id = int(record["annotation_id"])
-        if annotation_id in indexed:
-            raise ValueError(
-                f"Duplicate annotation_id {annotation_id} in {label}."
-            )
-        indexed[annotation_id] = record
-    return indexed
+def _error(a: Coordinate, b: Coordinate) -> float:
+    return math.hypot(a[0] - b[0], a[1] - b[1])
 
 
-def reshape_record(record):
-    return {
-        "coarse": np.asarray(
-            record["coarse_keypoints_224"],
-            dtype=np.float64,
-        ).reshape(17, 2),
-        "final": np.asarray(
-            record["final_keypoints_224"],
-            dtype=np.float64,
-        ).reshape(17, 2),
-        "ground_truth": np.asarray(
-            record["gt_keypoints_224"],
-            dtype=np.float64,
-        ).reshape(17, 3),
-        "crop_sizes": np.asarray(
-            record["refinement_crop_sizes"],
-            dtype=np.float64,
-        ).reshape(17),
-        "confidence": np.asarray(
-            record["coarse_confidence"],
-            dtype=np.float64,
-        ).reshape(17),
-        "applied": np.asarray(
-            record["refinement_applied"],
-            dtype=bool,
-        ).reshape(17),
-    }
+def _infinity_error(a: Coordinate, b: Coordinate) -> float:
+    """Return the L-infinity error used only for Table 16 stratification."""
+
+    return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
 
 
-def collect_keypoint_arrays(
-    always_on_records,
-    gated_records,
-    confidence_threshold,
-):
-    always_index = index_records(always_on_records, "always-on run")
-    gated_index = index_records(gated_records, "gated run")
-    if always_index.keys() != gated_index.keys():
-        missing_from_gated = sorted(
-            always_index.keys() - gated_index.keys()
-        )
-        missing_from_always = sorted(
-            gated_index.keys() - always_index.keys()
-        )
-        raise ValueError(
-            "Runs contain different annotation IDs: "
-            f"missing from gated={missing_from_gated[:5]}, "
-            f"missing from always-on={missing_from_always[:5]}."
-        )
-
-    collected = {
-        key: []
-        for key in (
-            "coarse",
-            "ground_truth",
-            "crop_sizes",
-            "confidence",
-            "always_final",
-            "gated_final",
-            "always_applied",
-            "gated_applied",
-        )
-    }
-
-    for annotation_id in sorted(always_index):
-        always = reshape_record(always_index[annotation_id])
-        gated = reshape_record(gated_index[annotation_id])
-
-        for key in (
-            "coarse",
-            "ground_truth",
-            "crop_sizes",
-            "confidence",
+def _bin(value: float) -> str:
+    for index, (label, lo, hi) in enumerate(BINS):
+        # Match the manuscript intervals exactly: 0 <= q <= 0.10,
+        # followed by left-open/right-closed ranges.
+        if (index == 0 and lo <= value <= hi) or (
+            index > 0 and lo < value <= hi
         ):
-            if not np.allclose(always[key], gated[key], atol=1e-6):
-                raise ValueError(
-                    f"{key} differs between runs for annotation "
-                    f"{annotation_id}."
-                )
-        if not np.all(always["applied"]):
-            raise ValueError(
-                "The always-on run contains skipped keypoints for "
-                f"annotation {annotation_id}."
-            )
-
-        expected_gated = (
-            gated["confidence"] >= confidence_threshold
-        )
-        if not np.array_equal(gated["applied"], expected_gated):
-            raise ValueError(
-                "The gated run does not match confidence >= "
-                f"{confidence_threshold} for annotation "
-                f"{annotation_id}."
-            )
-        expected_final = np.where(
-            gated["applied"][:, None],
-            gated["final"],
-            gated["coarse"],
-        )
-        if not np.allclose(
-            expected_final,
-            gated["final"],
-            atol=1e-6,
-        ):
-            raise ValueError(
-                "Skipped keypoints do not preserve their coarse "
-                f"coordinates for annotation {annotation_id}."
-            )
-
-        collected["coarse"].append(always["coarse"])
-        collected["ground_truth"].append(always["ground_truth"])
-        collected["crop_sizes"].append(always["crop_sizes"])
-        collected["confidence"].append(always["confidence"])
-        collected["always_final"].append(always["final"])
-        collected["gated_final"].append(gated["final"])
-        collected["always_applied"].append(always["applied"])
-        collected["gated_applied"].append(gated["applied"])
-
-    return {
-        key: np.concatenate(value, axis=0)
-        for key, value in collected.items()
-    }
+            return label
+    return BINS[-1][0]
 
 
-def outcome_counts(coarse_error, final_error, tolerance_px):
-    change = final_error - coarse_error
-    improved = change < -tolerance_px
-    unchanged = np.abs(change) <= tolerance_px
-    worsened = change > tolerance_px
-    if not np.all(improved | unchanged | worsened):
-        raise RuntimeError("Outcome classes are not exhaustive.")
-    return {
-        "improved": int(improved.sum()),
-        "unchanged": int(unchanged.sum()),
-        "worsened": int(worsened.sum()),
-    }
+def _read_jsonl(path: Path) -> List[MutableMapping[str, object]]:
+    rows: List[MutableMapping[str, object]] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"invalid JSON on line {line_number}: {exc}") from exc
+            for key in ("gt", "coarse", "refined", "crop_size", "sequence_confidence"):
+                if key not in record:
+                    raise ValueError(f"line {line_number} is missing {key!r}")
+            rows.append(record)
+    return rows
 
 
-def summarize_subset(
-    coarse_error,
-    final_error,
-    applied,
-    mask,
-    total_count,
-    tolerance_px,
-):
-    count = int(mask.sum())
-    if count == 0:
-        raise ValueError("An analysis range contains no keypoints.")
-    coarse_subset = coarse_error[mask]
-    final_subset = final_error[mask]
-    counts = outcome_counts(
-        coarse_subset,
-        final_subset,
-        tolerance_px,
-    )
-    mean_coarse = float(coarse_subset.mean())
-    mean_final = float(final_subset.mean())
-    reduction = (
-        100.0 * (mean_coarse - mean_final) / mean_coarse
-        if mean_coarse > 0.0
-        else 0.0
-    )
-    return {
-        "count": count,
-        "proportion_percent": 100.0 * count / total_count,
-        "coverage_percent": 100.0 * float(applied[mask].mean()),
-        "coarse_error_px": mean_coarse,
-        "final_error_px": mean_final,
-        "error_reduction_percent": reduction,
-        "improved_count": counts["improved"],
-        "unchanged_count": counts["unchanged"],
-        "worsened_count": counts["worsened"],
-        "improved_percent": 100.0 * counts["improved"] / count,
-        "unchanged_percent": 100.0 * counts["unchanged"] / count,
-        "worsened_percent": 100.0 * counts["worsened"] / count,
-    }
-
-
-def analyze_records(
-    always_on_records,
-    gated_records,
-    *,
-    confidence_threshold=0.5,
-    tolerance_px=0.5,
-):
-    arrays = collect_keypoint_arrays(
-        always_on_records,
-        gated_records,
-        confidence_threshold,
-    )
-    visible = arrays["ground_truth"][:, 2] > 0
-    if not np.any(visible):
-        raise ValueError("No annotated keypoints were found.")
-
-    coarse = arrays["coarse"][visible]
-    ground_truth = arrays["ground_truth"][visible, :2]
-    crop_sizes = arrays["crop_sizes"][visible]
-    if np.any(crop_sizes <= 0.0):
-        raise ValueError("Crop sizes must be positive.")
-
-    normalized_coarse_error = (
-        np.max(np.abs(coarse - ground_truth), axis=1)
-        / crop_sizes
-    )
-    coarse_error = np.linalg.norm(
-        coarse - ground_truth,
-        axis=1,
-    )
-    policy_data = {
-        "always_on": {
-            "final": arrays["always_final"][visible],
-            "applied": arrays["always_applied"][visible],
-        },
-        "confidence_gated": {
-            "final": arrays["gated_final"][visible],
-            "applied": arrays["gated_applied"][visible],
-        },
-    }
-
-    total_count = int(visible.sum())
-    rows = []
-    for policy, values in policy_data.items():
-        final_error = np.linalg.norm(
-            values["final"] - ground_truth,
-            axis=1,
-        )
-        for label, lower, upper, include_upper in BIN_DEFINITIONS:
-            if np.isinf(upper):
-                mask = normalized_coarse_error > lower
-            elif lower == 0.0:
-                mask = normalized_coarse_error <= upper
-            else:
-                upper_test = (
-                    normalized_coarse_error <= upper
-                    if include_upper
-                    else normalized_coarse_error < upper
-                )
-                mask = (
-                    (normalized_coarse_error > lower)
-                    & upper_test
-                )
-            row = summarize_subset(
-                coarse_error,
-                final_error,
-                values["applied"],
-                mask,
-                total_count,
-                tolerance_px,
-            )
-            row["policy"] = policy
-            row["q_range"] = label
-            rows.append(row)
-
-        overall = summarize_subset(
-            coarse_error,
-            final_error,
-            values["applied"],
-            np.ones(total_count, dtype=bool),
-            total_count,
-            tolerance_px,
-        )
-        overall["policy"] = policy
-        overall["q_range"] = "overall"
-        rows.append(overall)
-
-    return {
-        "definitions": {
-            "coordinate_system": "resized 224x224 person instance",
-            "normalized_coarse_error": (
-                "L-infinity(coarse - ground_truth) / crop_size"
-            ),
-            "confidence": (
-                "geometric mean probability of generated tokens"
-            ),
-            "gate_rule": (
-                "refine when confidence >= threshold; otherwise "
-                "retain the coarse coordinate"
-            ),
-            "outcomes": {
-                "improved": "final_error - coarse_error < -tolerance",
-                "unchanged": (
-                    "abs(final_error - coarse_error) <= tolerance"
-                ),
-                "worsened": "final_error - coarse_error > tolerance",
-            },
-        },
-        "confidence_threshold": confidence_threshold,
-        "tolerance_px": tolerance_px,
-        "annotated_keypoint_count": total_count,
-        "rows": rows,
-    }
-
-
-def write_csv(path, rows):
-    fieldnames = (
-        "policy",
-        "q_range",
-        "count",
-        "proportion_percent",
-        "coverage_percent",
-        "coarse_error_px",
-        "final_error_px",
-        "error_reduction_percent",
-        "improved_count",
-        "unchanged_count",
-        "worsened_count",
-        "improved_percent",
-        "unchanged_percent",
-        "worsened_percent",
-    )
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-
-
-def print_markdown(rows):
-    print(
-        "| Policy | q range | Count | Proportion | Coverage | "
-        "Error (coarse/final) | Reduction | Improved | "
-        "Unchanged | Worsened |"
-    )
-    print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+def _summarise(rows: Iterable[Mapping[str, object]], tolerance: float) -> List[dict]:
+    grouped: Dict[Tuple[str, str], List[Mapping[str, object]]] = defaultdict(list)
     for row in rows:
-        print(
-            f"| {row['policy']} | {row['q_range']} | "
-            f"{row['count']} | {row['proportion_percent']:.1f}% | "
-            f"{row['coverage_percent']:.1f}% | "
-            f"{row['coarse_error_px']:.1f}/"
-            f"{row['final_error_px']:.1f} | "
-            f"{row['error_reduction_percent']:.1f}% | "
-            f"{row['improved_percent']:.1f}% | "
-            f"{row['unchanged_percent']:.1f}% | "
-            f"{row['worsened_percent']:.1f}% |"
+        grouped[(str(row.get("policy", "always_on")), str(row["error_bin"]))].append(row)
+
+    output: List[dict] = []
+    for policy in ("always_on", "gated"):
+        for label, _, _ in BINS:
+            subset = grouped.get((policy, label), [])
+            n = len(subset)
+            if not n:
+                output.append({"policy": policy, "error_range": label, "n": 0})
+                continue
+            coarse = [float(r["coarse_error"]) for r in subset]
+            final = [float(r["final_error"]) for r in subset]
+            outcomes = Counter(str(r["outcome"]) for r in subset)
+            mean_coarse = sum(coarse) / n
+            mean_final = sum(final) / n
+            reduction = 100.0 * (mean_coarse - mean_final) / mean_coarse if mean_coarse else 0.0
+            output.append(
+                {
+                    "policy": policy,
+                    "error_range": label,
+                    "n": n,
+                    "coverage": 100.0 * sum(bool(r["accepted"]) for r in subset) / n,
+                    "coarse_error_px": mean_coarse,
+                    "final_error_px": mean_final,
+                    "reduction_percent": reduction,
+                    "improved_percent": 100.0 * outcomes["Improved"] / n,
+                    "unchanged_percent": 100.0 * outcomes["Unchanged"] / n,
+                    "worsened_percent": 100.0 * outcomes["Worsened"] / n,
+                    "tolerance_px": tolerance,
+                }
+            )
+    return output
+
+
+def analyse(
+    rows: Iterable[MutableMapping[str, object]],
+    policy: RefinementPolicy,
+    tolerance: float = 0.5,
+) -> Tuple[List[MutableMapping[str, object]], List[dict]]:
+    enriched: List[MutableMapping[str, object]] = []
+    for row in rows:
+        gt = _point(row["gt"])  # type: ignore[arg-type]
+        coarse = _point(row["coarse"])  # type: ignore[arg-type]
+        refined = _point(row["refined"])  # type: ignore[arg-type]
+        crop_size = float(row["crop_size"])
+        if crop_size <= 0:
+            raise ValueError("crop_size must be positive")
+        coarse_error = _error(coarse, gt)
+        refined_error = _error(refined, gt)
+        normalized_coarse_error = _infinity_error(coarse, gt) / crop_size
+        confidence = float(row["sequence_confidence"])
+        heatmap_confidence = row.get("heatmap_confidence")
+        final, accepted = policy.apply(
+            coarse,
+            refined,
+            confidence,
+            heatmap_confidence=None if heatmap_confidence is None else float(heatmap_confidence),
+        )
+        gated_error = _error(final, gt)
+        base = dict(row)
+        base.update(
+            {
+                "coarse_error": coarse_error,
+                "always_on_error": refined_error,
+                "gated_error": gated_error,
+                "normalized_coarse_error": normalized_coarse_error,
+                "error_bin": _bin(normalized_coarse_error),
+            }
         )
 
+        always_on = dict(base)
+        always_on.update(
+            {
+                "policy": "always_on",
+                "final": list(refined),
+                "final_error": refined_error,
+                "accepted": True,
+                "outcome": classify_outcome(coarse_error, refined_error, tolerance),
+            }
+        )
+        gated = dict(base)
+        gated.update(
+            {
+                "policy": "gated",
+                "final": list(final),
+                "final_error": gated_error,
+                "accepted": accepted,
+                "outcome": classify_outcome(coarse_error, gated_error, tolerance),
+            }
+        )
+        enriched.extend((always_on, gated))
+    return enriched, _summarise(enriched, tolerance)
 
-def main():
+
+def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--always-on-predictions",
-        type=Path,
-        required=True,
-    )
-    parser.add_argument(
-        "--gated-predictions",
-        type=Path,
-        required=True,
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=Path("results/refinement_reliability/analysis"),
-    )
-    parser.add_argument(
-        "--confidence-threshold",
-        type=float,
-        default=0.5,
-    )
-    parser.add_argument(
-        "--tolerance-px",
-        type=float,
-        default=0.5,
-    )
+    parser.add_argument("--input", type=Path, required=True, help="raw prediction JSONL")
+    parser.add_argument("--out-json", type=Path, required=True)
+    parser.add_argument("--out-csv", type=Path, required=True)
+    parser.add_argument("--threshold", type=float, default=0.5)
+    parser.add_argument("--tolerance", type=float, default=0.5)
+    parser.add_argument("--heatmap-threshold", type=float, default=None)
+    parser.add_argument("--max-displacement", type=float, default=None)
     args = parser.parse_args()
 
-    if not 0.0 <= args.confidence_threshold <= 1.0:
-        parser.error("--confidence-threshold must be in [0, 1].")
-    if args.tolerance_px < 0.0:
-        parser.error("--tolerance-px must be non-negative.")
-
-    analysis = analyze_records(
-        load_records(args.always_on_predictions),
-        load_records(args.gated_predictions),
-        confidence_threshold=args.confidence_threshold,
-        tolerance_px=args.tolerance_px,
+    policy = RefinementPolicy(
+        confidence_threshold=args.threshold,
+        heatmap_threshold=args.heatmap_threshold,
+        max_displacement=args.max_displacement,
     )
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    with (
-        args.output_dir / "refinement_reliability.json"
-    ).open("w", encoding="utf-8") as handle:
-        json.dump(analysis, handle, indent=2)
-    write_csv(
-        args.output_dir / "refinement_reliability.csv",
-        analysis["rows"],
+    raw = _read_jsonl(args.input)
+    rows, summary = analyse(raw, policy, tolerance=args.tolerance)
+    args.out_json.parent.mkdir(parents=True, exist_ok=True)
+    args.out_csv.parent.mkdir(parents=True, exist_ok=True)
+    args.out_json.write_text(
+        json.dumps({"policy": policy.__dict__, "summary": summary, "records": rows}, indent=2),
+        encoding="utf-8",
     )
-    print_markdown(analysis["rows"])
+    with args.out_csv.open("w", newline="", encoding="utf-8") as handle:
+        fields = list(summary[0].keys()) if summary else ["policy", "error_range", "n"]
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(summary)
+    print(json.dumps({"records": len(raw), "summary": summary}, indent=2))
 
 
 if __name__ == "__main__":

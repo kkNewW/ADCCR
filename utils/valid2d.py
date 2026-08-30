@@ -35,6 +35,7 @@ from utils.refinement_policy import (
     select_refinement_indices,
     validate_refinement_policy,
 )
+from utils.refinement_trace import write_raw_refinement_jsonl
 from dataclasses import dataclass
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
@@ -330,6 +331,7 @@ def worker(model, tokenizer, dataset, args, output_dir):
             1.0,
         )
         refinement_indices = np.empty(0, dtype=np.int64)
+        refined_xy_224 = coarse_xy_224.copy()
 
         if args.use_local_refiner:
             if not getattr(
@@ -395,11 +397,12 @@ def worker(model, tokenizer, dataset, args, output_dir):
                     ),
                 )
 
-                decoded_kpt[:, :2] = merge_refined_coordinates(
+                refined_xy_224 = merge_refined_coordinates(
                     coarse_xy_224,
                     refined_xy.float().cpu().numpy(),
                     refinement_indices,
                 )
+                decoded_kpt[:, :2] = refined_xy_224
 
         final_xy_224 = decoded_kpt[:, :2].copy()
 
@@ -440,9 +443,18 @@ def worker(model, tokenizer, dataset, args, output_dir):
         data["coarse_keypoints_224"] = coarse_xy_224.reshape(
             -1
         ).tolist()
+        data["refined_keypoints_224"] = refined_xy_224.reshape(
+            -1
+        ).tolist()
         data["final_keypoints_224"] = final_xy_224.reshape(
             -1
         ).tolist()
+        data["keypoint_names"] = [
+            result["kpt_name"] for result in result_dicts
+        ]
+        data["descriptions"] = [
+            result["description"] for result in result_dicts
+        ]
         data["coarse_confidence"] = sequence_confidence.tolist()
         data["refinement_crop_sizes"] = (
             effective_crop_sizes.tolist()
@@ -496,6 +508,16 @@ def worker(model, tokenizer, dataset, args, output_dir):
         )
         with open(detailed_file, "w") as fid:
             json.dump(kpt_all_pred, fid)
+
+        if args.save_raw_refinement_records:
+            raw_count = write_raw_refinement_jsonl(
+                kpt_all_pred,
+                args.raw_refinement_records_file,
+            )
+            print(
+                f"Wrote {raw_count} visible-keypoint records to "
+                f"{args.raw_refinement_records_file}"
+            )
 
         coco_results = [
             {
@@ -579,6 +601,21 @@ def eval_model(args):
         args.use_refinement_confidence_gate,
         args.refinement_confidence_threshold,
     )
+    if args.save_raw_refinement_records:
+        if not args.use_local_refiner:
+            raise ValueError(
+                "Raw refinement records require --use-local-refiner."
+            )
+        if args.use_refinement_confidence_gate:
+            raise ValueError(
+                "Export raw refinement candidates from the always-on stage; "
+                "the offline analyzer applies the confidence gate."
+            )
+        if args.raw_refinement_records_file is None:
+            args.raw_refinement_records_file = os.path.join(
+                args.output_dir,
+                "raw_refinement_predictions.jsonl",
+            )
     torch.distributed.init_process_group(backend='nccl')
     rank = int(os.environ["LOCAL_RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
@@ -649,6 +686,16 @@ if __name__ == "__main__":
         "--refinement-confidence-threshold",
         type=float,
         default=0.5,
+    )
+    parser.add_argument(
+        "--save-raw-refinement-records",
+        action="store_true",
+        help="Write one reliability-analysis JSONL row per visible keypoint.",
+    )
+    parser.add_argument(
+        "--raw-refinement-records-file",
+        type=str,
+        default=None,
     )
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument(
