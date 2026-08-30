@@ -57,7 +57,7 @@ Download [COCO](https://cocodataset.org/#home) , [MPII](https://www.mpi-inf.mpg.
 ```bash
 git lfs install
 
-git clone https://huggingface.co/kkNewW/ADCCR
+git clone https://huggingface.co/kk618/ADCCR
 
 mkdir checkpoints
 mkdir checkpoints/ckpts
